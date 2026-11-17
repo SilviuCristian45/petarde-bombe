@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CELL_BRICK } from '../src/constants';
-import { botDecide, computeDanger } from '../src/bot';
+import { botDecide, botThink, computeDanger } from '../src/bot';
 import { addBot, addPlayer, createGameState, sortedPlayers, startMatch } from '../src/match';
 import { applyInput, step } from '../src/sim';
 import { addBomb, makeState } from './helpers';
@@ -56,6 +56,20 @@ describe('bots', () => {
   it('bombs an enemy in line of fire', () => {
     const s = makeState(['#######', '#1.2..#', '#.#.#.#', '#.....#', '#######']);
     expect(botDecide(s, 'p1')).toBe('bomb');
+  });
+
+  it('reports why it acts: flee, break, attack', () => {
+    const flee = makeState(['#######', '#1....#', '#.#.#.#', '#....2#', '#######']);
+    addBomb(flee, 1, 1, 'p2', 30, 2);
+    const f = botThink(flee, 'p1');
+    expect(f.intent).toBe('flee');
+    expect(f.path.length).toBeGreaterThan(0);
+
+    const brick = makeState(['#######', '#1+...#', '#.#.#.#', '#....2#', '#######']);
+    expect(botThink(brick, 'p1')).toMatchObject({ action: 'bomb', intent: 'break' });
+
+    const enemy = makeState(['#######', '#1.2..#', '#.#.#.#', '#.....#', '#######']);
+    expect(botThink(enemy, 'p1')).toMatchObject({ action: 'bomb', intent: 'attack' });
   });
 
   it('a room full of bots clears bricks and finishes a whole match', () => {

@@ -14,7 +14,9 @@ import type { Action, GameState, PlayerState } from './types';
 // Simple bots: flee danger, break bricks, bomb near players, grab power-ups.
 // Pure functions of the state, so the server can fill rooms with bots too.
 
-const INF = 1 << 30;
+/** Danger value for cells no fire is heading to. */
+export const NO_DANGER = 1 << 30;
+const INF = NO_DANGER;
 const SAFETY_MARGIN = 4; // ticks
 const SHRINK_LOOKAHEAD = 12; // upcoming shrink cells treated as dangerous
 
@@ -132,15 +134,25 @@ function enemyCells(state: GameState, me: PlayerState): Set<number> {
   return cells;
 }
 
-/** Worth bombing from cell i: a brick next to it or an enemy inside the blast. */
-function isBombSpot(state: GameState, i: number, range: number, enemies: Set<number>): boolean {
+function brickNextTo(state: GameState, i: number): boolean {
   const x = i % state.width;
   const y = (i - x) / state.width;
   for (const [dx, dy] of NEIGHBOURS) {
     if (state.grid[cellIndex(state, x + dx, y + dy)] === CELL_BRICK) return true;
   }
+  return false;
+}
+
+function enemyInBlast(state: GameState, i: number, range: number, enemies: Set<number>): boolean {
+  const x = i % state.width;
+  const y = (i - x) / state.width;
   for (const c of blastCells(state, x, y, range)) if (enemies.has(c)) return true;
   return false;
+}
+
+/** Worth bombing from cell i: a brick next to it or an enemy inside the blast. */
+function isBombSpot(state: GameState, i: number, range: number, enemies: Set<number>): boolean {
+  return brickNextTo(state, i) || enemyInBlast(state, i, range, enemies);
 }
 
 function canEscapeAfterBomb(s: Search, range: number): boolean {
@@ -152,10 +164,24 @@ function canEscapeAfterBomb(s: Search, range: number): boolean {
   return findPath({ ...s, danger }, (i) => danger[i] === INF) !== null;
 }
 
+export type BotIntent = 'flee' | 'break' | 'attack' | 'powerup' | 'idle';
+
+export interface BotThought {
+  action: Action;
+  intent: BotIntent;
+  /** Cells the bot plans to walk through, last one is its target (empty = none). */
+  path: number[];
+}
+
 /** Picks the bot's next action for this tick. */
 export function botDecide(state: GameState, botId: string): Action {
+  return botThink(state, botId).action;
+}
+
+/** Same decision as botDecide, plus why and where it is heading (for the debug view). */
+export function botThink(state: GameState, botId: string): BotThought {
   const me = state.players[botId];
-  if (!me || !me.alive || state.phase !== 'playing') return 'stop';
+  if (!me || !me.alive || state.phase !== 'playing') return { action: 'stop', intent: 'idle', path: [] };
 
   const here = cellIndex(state, cellOf(me.x), cellOf(me.y));
   const blocked = new Set<number>();
@@ -169,11 +195,14 @@ export function botDecide(state: GameState, botId: string): Action {
     blocked,
     order: (me.slot + Math.floor(state.tick / 60)) % 4,
   };
-  const go = (path: number[] | null): Action => (path && path.length > 0 ? directionTo(state, here, path[0]!) : 'stop');
+  const go = (path: number[] | null, intent: BotIntent): BotThought =>
+    path && path.length > 0
+      ? { action: directionTo(state, here, path[0]!), intent, path }
+      : { action: 'stop', intent, path: [] };
 
   // 1. Standing in a blast zone: run to the nearest safe cell.
   if (s.danger[here] !== INF) {
-    return go(findPath(s, (i) => s.danger[i] === INF));
+    return go(findPath(s, (i) => s.danger[i] === INF), 'flee');
   }
 
   const enemies = enemyCells(state, me);
@@ -183,7 +212,9 @@ export function botDecide(state: GameState, botId: string): Action {
 
   // 2. Good spot and a way out: drop a bomb.
   const bombHere = hasBomb && isBombSpot(state, here, me.range, enemies) && canEscapeAfterBomb(s, me.range);
-  if (bombHere) return 'bomb';
+  if (bombHere) {
+    return { action: 'bomb', intent: enemyInBlast(state, here, me.range, enemies) ? 'attack' : 'break', path: [] };
+  }
 
   // 3. Head for a power-up or the nearest useful bombing spot, staying out of danger.
   const powerups = new Set(state.powerups.map((u) => cellIndex(state, u.x, u.y)));
@@ -192,12 +223,16 @@ export function botDecide(state: GameState, botId: string): Action {
     roam,
     (i) => i !== here && s.danger[i] === INF && (powerups.has(i) || (hasBomb && isBombSpot(state, i, me.range, enemies))),
   );
-  if (target) return go(target);
+  if (target) {
+    const end = target[target.length - 1]!;
+    const intent = powerups.has(end) ? 'powerup' : enemyInBlast(state, end, me.range, enemies) ? 'attack' : 'break';
+    return go(target, intent);
+  }
 
   // 4. Nothing useful in reach: approach the nearest enemy, else wait.
   if (enemies.size > 0) {
     const toEnemy = findPath(roam, (i) => i !== here && enemies.has(i));
-    if (toEnemy) return go(toEnemy);
+    if (toEnemy) return go(toEnemy, 'attack');
   }
-  return 'stop';
+  return { action: 'stop', intent: 'idle', path: [] };
 }
