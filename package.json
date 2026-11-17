@@ -1,0 +1,21 @@
+{
+  "name": "bombe-si-petarde",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "preview": "npm run preview -w client",
+    "test": "npm test -w shared",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w client"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
