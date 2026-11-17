@@ -26,6 +26,19 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
 - Lobby: cod de room de 6 caractere, max 6 jucători, host transferat la plecare,
   intrare doar în lobby, 3/5/7 runde, minim 2 jucători (boții se numără).
 - Boți (`botDecide`): fug din zonele de explozie, sparg ziduri, pun bombe lângă jucători.
+  `botThink` întoarce aceeași decizie plus intenția (fuge/sparge/atacă/bonus) și drumul planificat.
+
+## Client (`/client`)
+
+- Scenele citesc starea și trimit input-uri doar prin `GameTransport` (`client/src/net`).
+  `LocalTransport` rulează simularea din `/shared` în browser, cu boți; `ColyseusTransport` va urma.
+- Input-ul vine dintr-un `InputSource` (`client/src/input`); acum tastatură: săgeți/WASD + Spațiu.
+- Jucătorii sunt interpolați între ultimele două tick-uri; grafica e desenată procedural la pornire.
+- `P` pune pauză simulării locale (doar cu `LocalTransport`). `Enter` la final: încă un meci.
+
+Opțiuni din URL (joc local): `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
+Modul `?debug` afișează gridul cu coordonate, hitbox-urile (celula de sub centrul jucătorului),
+zonele de pericol, tick-ul, FPS-ul și intenția + drumul fiecărui bot.
 
 ## Rulare locală
 
