@@ -1,4 +1,4 @@
-import type { ClientMessage, GameEvent, GameState } from '@petarde/shared';
+import type { ClientMessage, GameEvent, GameState, NewRecord } from '@petarde/shared';
 
 // Scenes only talk to the game through this interface, so the same rendering code
 // runs on top of the local simulation (LocalTransport) and the Colyseus room (ColyseusTransport).
@@ -25,6 +25,8 @@ export interface GameTransport {
   isPaused(): boolean;
   setPaused(paused: boolean): void;
   connectionStatus(): ConnectionStatus;
+  /** Players of the finished match who set a new all-time record (online only; empty until the server saved it). */
+  newRecords(): readonly NewRecord[];
   /** Why the connection closed, shown back in the menu. */
   readonly closeReason: string;
   dispose(): void;

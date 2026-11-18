@@ -1,10 +1,13 @@
 import type { Room } from '@colyseus/sdk';
 import {
   MSG_EVENTS,
+  MSG_RECORDS,
   type BombState,
   type FlameState,
   type GameEvent,
   type GameState,
+  type MatchRecords,
+  type NewRecord,
   type Phase,
   type PlayerState,
   type PowerUpState,
@@ -65,6 +68,7 @@ export class ColyseusTransport implements GameTransport {
   private disposed = false;
   private readonly queued: { tick: number; at: number; events: GameEvent[] }[] = [];
   private readonly listeners = new Set<(events: GameEvent[]) => void>();
+  private records: NewRecord[] = [];
 
   constructor(
     private readonly room: Room,
@@ -82,6 +86,9 @@ export class ColyseusTransport implements GameTransport {
     });
     room.onMessage(MSG_EVENTS, (msg: TickEvents) => {
       this.queued.push({ tick: msg.tick, at: performance.now(), events: msg.events });
+    });
+    room.onMessage(MSG_RECORDS, (msg: MatchRecords) => {
+      this.records = Array.isArray(msg?.records) ? msg.records : [];
     });
     room.onDrop(() => {
       this.status = 'reconnecting';
@@ -127,6 +134,8 @@ export class ColyseusTransport implements GameTransport {
     if (this.dirty) {
       this.dirty = false;
       this.state = toGameState(this.room.state as RemoteState);
+      // The records belong to the match just finished; the next one starts from the lobby.
+      if (this.state.phase === 'lobby') this.records = [];
     }
     this.flushEvents();
   }
@@ -141,6 +150,10 @@ export class ColyseusTransport implements GameTransport {
 
   connectionStatus(): ConnectionStatus {
     return this.status;
+  }
+
+  newRecords(): readonly NewRecord[] {
+    return this.records;
   }
 
   /** Leaving for good: a consented leave (no 15 s seat) and the token forgotten, so a reload does not rejoin. */

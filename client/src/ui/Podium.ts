@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { computeAwards, computeStandings, PLAYER_COLORS, type AwardId, type GameState } from '@petarde/shared';
+import { computeAwards, computeStandings, PLAYER_COLORS, type AwardId, type GameState, type NewRecord } from '@petarde/shared';
 import { firework } from '../render/fx';
 import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { TEX } from '../render/textures';
@@ -37,6 +37,8 @@ const AWARD_TEXT: Record<AwardId, { title: string; detail: (n: number) => string
 
 export interface PodiumOptions {
   me: string;
+  /** Online matches may set all-time records; offline ones get a note that they do not count. */
+  online: boolean;
   depth: number;
   /** "Încă un meci" (host only). */
   onAgain: () => void;
@@ -48,6 +50,9 @@ export class Podium {
   private readonly table: StandingsTable;
   private readonly againButton: TextButton;
   private readonly waitText: Phaser.GameObjects.Text;
+  /** "Record nou! Locul X" once the server has saved the match, or the offline note. */
+  private readonly recordText: Phaser.GameObjects.Text;
+  private recordsShown: readonly NewRecord[] = [];
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -63,6 +68,18 @@ export class Podium {
     add(
       scene.add
         .text(GAME_W / 2, 34, 'Meci încheiat!', { fontFamily: FONT, fontSize: '30px', color: '#ffe066', stroke: '#7a1f2b', strokeThickness: 5 })
+        .setOrigin(0.5),
+    );
+
+    this.recordText = add(
+      scene.add
+        .text(GAME_W / 2, 66, opts.online ? '' : 'Meciurile offline nu intră în clasament', {
+          fontFamily: FONT,
+          fontSize: opts.online ? '18px' : '13px',
+          color: opts.online ? '#ffe066' : '#6f7a9a',
+          align: 'center',
+          wordWrap: { width: 900 },
+        })
         .setOrigin(0.5),
     );
 
@@ -88,11 +105,22 @@ export class Podium {
   }
 
   /** Keeps the table and the host's button current (players may leave, the host may change). */
-  update(state: Readonly<GameState>): void {
+  update(state: Readonly<GameState>, records: readonly NewRecord[] = []): void {
     this.table.update(state, this.opts.me, false);
+    if (records !== this.recordsShown) this.showRecords(records);
     const isHost = state.hostId === this.opts.me;
     this.againButton.setVisible(isHost);
     this.waitText.setVisible(!isHost);
+  }
+
+  /** Mine first, as "Record nou! Locul X"; the others by name. */
+  private showRecords(records: readonly NewRecord[]): void {
+    this.recordsShown = records;
+    if (!this.opts.online) return;
+    const sorted = [...records].sort((a, b) => Number(b.playerId === this.opts.me) - Number(a.playerId === this.opts.me) || a.place - b.place);
+    const parts = sorted.map((r) => (r.playerId === this.opts.me ? `Record nou! Locul ${r.place}` : `${r.name}: record nou, locul ${r.place}`));
+    this.recordText.setText(parts.length > 0 ? `★ ${parts.join('  ·  ')} ★` : '');
+    if (parts.length > 0) this.scene.tweens.add({ targets: this.recordText, scale: { from: 1.4, to: 1 }, duration: 400, ease: 'Back.easeOut' });
   }
 
   destroy(): void {

@@ -14,6 +14,7 @@ import {
   TICK_MS,
   type GameEvent,
   type GameState,
+  type NewRecord,
   type PlayerInput,
 } from '@petarde/shared';
 import type { ClientMessage, ConnectionStatus, GameTransport } from './GameTransport';
@@ -51,6 +52,11 @@ export class LocalTransport implements GameTransport {
     for (let i = 0; i < opts.bots; i++) this.addBot();
     setRounds(this.state, this.playerId, opts.rounds);
     if (opts.autoStart) startMatch(this.state, this.playerId);
+  }
+
+  /** Offline matches never enter the leaderboard. */
+  newRecords(): readonly NewRecord[] {
+    return [];
   }
 
   getState(): Readonly<GameState> {

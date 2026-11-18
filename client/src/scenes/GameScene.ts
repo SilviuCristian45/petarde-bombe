@@ -804,11 +804,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     if (this.podium) {
-      this.podium.update(state);
+      this.podium.update(state, this.transport.newRecords());
       return;
     }
     this.podium = new Podium(this, state, {
       me: this.transport.playerId,
+      online: this.transport.online,
       depth: DEPTH.podium,
       onAgain: () => this.restartMatch(),
       againLabel: TOUCH_LAYOUT ? 'Încă un meci' : 'Încă un meci (Enter)',

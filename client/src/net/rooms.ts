@@ -154,15 +154,21 @@ async function explain(err: unknown, code?: string): Promise<RoomError> {
 
 async function fetchStatus(code: string): Promise<RoomStatus | null> {
   try {
-    const url = new URL(serverUrl!);
-    url.protocol = url.protocol === 'wss:' ? 'https:' : url.protocol === 'ws:' ? 'http:' : url.protocol;
-    url.pathname = `${url.pathname.replace(/\/$/, '')}/rooms/${code}`;
-    const res = await withTimeout(fetch(url));
+    const res = await withTimeout(fetch(serverHttpUrl(`/rooms/${code}`)!));
     if (!res.ok) return null;
     return ((await res.json()) as { status: RoomStatus }).status;
   } catch {
     return null;
   }
+}
+
+/** An HTTP route of the game server (GET /rooms/:code, /leaderboard), or null in an offline-only build. */
+export function serverHttpUrl(path: string): URL | null {
+  if (!serverUrl) return null;
+  const url = new URL(serverUrl);
+  url.protocol = url.protocol === 'wss:' ? 'https:' : url.protocol === 'ws:' ? 'http:' : url.protocol;
+  url.pathname = `${url.pathname.replace(/\/$/, '')}${path}`;
+  return url;
 }
 
 /** Absolute endpoint (a bare path means this host), or null when online play is switched off. */
