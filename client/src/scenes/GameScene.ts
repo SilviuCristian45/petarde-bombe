@@ -3,6 +3,8 @@ import {
   CELL_BRICK,
   CELL_WALL,
   computeStandings,
+  COUNTDOWN_TICKS,
+  countdownSeconds,
   onlyBotsAlive,
   PLAYER_COLORS,
   POINTS_KILL,
@@ -16,6 +18,7 @@ import {
   type GameEvent,
   type GameState,
 } from '@petarde/shared';
+import { playSfx } from '../audio/sfx';
 import { DebugOverlay } from '../debug/DebugOverlay';
 import type { InputSource } from '../input/InputSource';
 import { KeyboardInput } from '../input/KeyboardInput';
@@ -34,10 +37,14 @@ import {
   subToScreenY,
   TILE,
 } from '../render/layout';
+import { addSnow, burst } from '../render/fx';
+import { addGarlands } from '../render/garlands';
 import { ensureTextures, TEX } from '../render/textures';
 import { load, save } from '../storage';
 import { ConnectionBanner } from '../ui/ConnectionBanner';
+import { Podium } from '../ui/Podium';
 import { notifyPresence } from '../ui/presence';
+import { StandingsTable, TABLE_H, TABLE_W } from '../ui/StandingsTable';
 import { TextButton } from '../ui/TextButton';
 
 export interface GameSceneData {
@@ -65,8 +72,27 @@ interface LocalDeath {
   tick: number;
 }
 
-const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, dim: 9, popup: 9.5, overlay: 10 } as const;
-const ROUND_BANNER_TICKS = TICK_RATE; // "Runda N!" shown for 1 s
+const DEPTH = {
+  snow: -1,
+  floor: 0,
+  powerup: 1,
+  cell: 2,
+  garland: 2.5,
+  bomb: 3,
+  flame: 4,
+  player: 5,
+  effect: 6,
+  label: 7,
+  dim: 9,
+  popup: 9.5,
+  countdown: 9.8,
+  overlay: 10,
+  standings: 10.2,
+  podium: 10.5,
+  leave: 10.6, // the leave button stays usable over the podium
+  confirm: 11,
+} as const;
+const FOC_SHOWN_TICKS = Math.round(0.8 * TICK_RATE); // "FOC!" stays a moment after the countdown
 const DEATH_BANNER_TICKS = Math.round(2.5 * TICK_RATE); // "Ai murit!", then spectator mode
 const DEATH_EFFECT_MS = 1400;
 const SCORE_POPUP_MS = 1600;
@@ -110,6 +136,13 @@ export class GameScene extends Phaser.Scene {
   private confirmParts: Phaser.GameObjects.GameObject[] = [];
   private confirmOpen = false;
   private localDeath?: LocalDeath;
+  private countdownRound!: Phaser.GameObjects.Text;
+  private countdownText!: Phaser.GameObjects.Text;
+  private lastCountdown = -1;
+  private standingsParts: Phaser.GameObjects.GameObject[] = [];
+  private standings!: StandingsTable;
+  private tabKey!: Phaser.Input.Keyboard.Key;
+  private podium?: Podium;
 
   constructor() {
     super('game');
@@ -131,11 +164,16 @@ export class GameScene extends Phaser.Scene {
     this.localDeath = undefined;
     this.confirmParts = [];
     this.confirmOpen = false;
+    this.lastCountdown = -1;
+    this.standingsParts = [];
+    this.podium = undefined;
   }
 
   create(): void {
     ensureTextures(this);
     const state = this.transport.getState();
+    // Seen around the board, behind it.
+    addSnow(this, DEPTH.snow);
 
     for (let y = 0; y < state.height; y++) {
       for (let x = 0; x < state.width; x++) {
@@ -148,6 +186,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    addGarlands(this, DEPTH.garland);
     this.createHud();
     // Between rounds the next map is already laid out; it is shown dimmed under the scores.
     this.boardDim = this.add
@@ -170,6 +209,8 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(DEPTH.overlay);
     this.createDeathOverlay();
+    this.createCountdown();
+    this.createStandingsOverlay();
     this.createLeaveConfirm();
 
     this.controls = new KeyboardInput(this.input.keyboard!);
@@ -181,6 +222,8 @@ export class GameScene extends Phaser.Scene {
       else this.restartMatch();
     });
     this.input.keyboard!.on('keydown-ESC', () => this.setConfirm(!this.confirmOpen));
+    // Captured so the browser does not move the focus away from the game.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
     this.unsubscribe = this.transport.onEvents((events) => this.handleEvents(events));
     if (state.phase === 'playing') this.showControlsHint();
 
@@ -222,6 +265,9 @@ export class GameScene extends Phaser.Scene {
     this.syncHud(state);
     const overlayShown = this.syncOverlay(state);
     this.syncDeathOverlay(state, overlayShown);
+    this.syncCountdown(state);
+    this.syncStandingsOverlay(state);
+    this.syncPodium(state);
     this.debug?.update(state, this.game.loop.actualFps, this.transport.isPaused(), (id) => {
       const view = this.playerViews.get(id);
       return view?.body.visible ? { x: view.body.x, y: view.body.y } : undefined;
@@ -232,13 +278,26 @@ export class GameScene extends Phaser.Scene {
     // Points won or lost in this batch, per player (a double kill shows as one "+2").
     const gained = new Map<string, number>();
     const add = (id: string, points: number) => gained.set(id, (gained.get(id) ?? 0) + points);
+    const matchWon = events.some((e) => e.type === 'matchEnd');
     for (const e of events) {
-      if (e.type === 'explosion') this.cameras.main.shake(120, 0.004);
+      if (e.type === 'explosion') {
+        this.cameras.main.shake(120, 0.004);
+        playSfx('explozie');
+      } else if (e.type === 'bombPlaced') {
+        playSfx('petarda');
+        playSfx('fitil');
+      } else if (e.type === 'pickup') playSfx('powerup');
+      else if (e.type === 'matchEnd') playSfx('la-multi-ani');
       else if (e.type === 'death') {
+        playSfx('moarte');
         this.onDeath(e);
         if (e.suicide) add(e.playerId, POINTS_SUICIDE);
         else if (e.killerId) add(e.killerId, POINTS_KILL);
-      } else if (e.type === 'roundEnd' && e.winnerId) add(e.winnerId, POINTS_ROUND_WIN);
+      } else if (e.type === 'roundEnd' && e.winnerId) {
+        add(e.winnerId, POINTS_ROUND_WIN);
+        // The last round's win is drowned by the match fanfare.
+        if (!matchWon) playSfx('runda');
+      }
       else if (e.type === 'roundStart') {
         this.controls.reset();
         this.showControlsHint();
@@ -288,39 +347,37 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Firework burst and a puff of smoke in the player's color. */
+  /** Firework burst and a puff of smoke in the player's color (both within the particle budget). */
   private playDeathEffect(x: number, y: number, color: number): void {
-    const sparks = this.add
-      .particles(x, y, TEX.spark, {
+    burst(this, x, y, {
+      count: 48,
+      lifespanMs: 1000,
+      depth: DEPTH.effect,
+      config: {
         speed: { min: 80, max: 240 },
         lifespan: { min: 500, max: 1000 },
         scale: { start: 1.2, end: 0 },
         gravityY: 220,
         tint: [color, color, 0xffffff, 0xffe066],
         blendMode: Phaser.BlendModes.ADD,
-        emitting: false,
-      })
-      .setDepth(DEPTH.effect);
-    sparks.explode(48);
-    const smoke = this.add
-      .particles(x, y, TEX.smoke, {
+      },
+    });
+    burst(this, x, y, {
+      count: 12,
+      lifespanMs: DEATH_EFFECT_MS,
+      depth: DEPTH.effect - 0.5,
+      texture: TEX.smoke,
+      config: {
         speed: { min: 8, max: 36 },
         angle: { min: 230, max: 310 },
         lifespan: { min: 900, max: DEATH_EFFECT_MS },
         scale: { start: 0.6, end: 1.8 },
         alpha: { start: 0.7, end: 0 },
         tint: [mixColor(color, 0x555566, 0.5), 0x555566],
-        emitting: false,
-      })
-      .setDepth(DEPTH.effect - 0.5);
-    smoke.explode(12);
-    const ring = this.add.circle(x, y, TILE / 2).setStrokeStyle(3, color).setDepth(DEPTH.effect);
-    this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 450, ease: 'Cubic.easeOut' });
-    this.time.delayedCall(DEATH_EFFECT_MS, () => {
-      sparks.destroy();
-      smoke.destroy();
-      ring.destroy();
+      },
     });
+    const ring = this.add.circle(x, y, TILE / 2).setStrokeStyle(3, color).setDepth(DEPTH.effect);
+    this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 450, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
   }
 
   /** Only the host may fast-forward, and only once every human is dead (the server checks it too). */
@@ -452,7 +509,7 @@ export class GameScene extends Phaser.Scene {
     }
     // Leaving is offered in every phase, alive or not; Esc does the same.
     const leave = new TextButton(this, HUD_X, BOARD_Y + BOARD_H, 'Ieși (Esc)', () => this.setConfirm(true), 'secondary', 12);
-    leave.setOrigin(0, 1).setDepth(DEPTH.overlay);
+    leave.setOrigin(0, 1).setDepth(DEPTH.leave);
     const help = ['Săgeți/WASD: mers', 'Spațiu: petardă'];
     if (this.transport.pausable) help.push('P: pauză');
     this.add.text(HUD_X, leave.y - leave.height - 10 - help.length * 17, help.join('\n'), {
@@ -466,7 +523,8 @@ export class GameScene extends Phaser.Scene {
   private syncHud(state: Readonly<GameState>): void {
     let timer = '';
     if (state.phase === 'playing') {
-      const left = SHRINK_START_TICKS - state.roundTick;
+      // The countdown is not part of the two minutes.
+      const left = Math.min(SHRINK_START_TICKS - state.roundTick, SHRINK_START_TICKS - COUNTDOWN_TICKS);
       timer = left > 0 ? `Strângere în ${formatTime(left)}` : 'Arena se strânge!';
     }
     const where = this.transport.online ? `Cod: ${state.code}` : 'Joc offline';
@@ -502,15 +560,8 @@ export class GameScene extends Phaser.Scene {
       const secs = Math.ceil(state.phaseTimer / TICK_RATE);
       const title = winner ? `${winner.name} câștigă runda ${state.round}!` : 'Egalitate!';
       text = `${title}\n\n${standingsLines(state).join('\n')}\n\nRunda ${state.round + 1} în ${secs}...`;
-    } else if (state.phase === 'finished') {
-      const again =
-        state.hostId === this.transport.playerId
-          ? `\n\nEnter: ${this.quick ? 'încă un meci' : 'înapoi în lobby'}`
-          : '\n\nHostul vă duce înapoi în lobby.';
-      text = `Meci încheiat!\n\n${standingsLines(state).join('\n')}${again}`;
-    } else if (state.phase === 'playing' && state.roundTick < ROUND_BANNER_TICKS) {
-      text = `Runda ${state.round}!`;
     }
+    // The countdown and the final podium have their own displays.
     this.boardDim.setVisible(state.phase === 'intermission');
     this.overlayText.setText(text);
     this.overlayBg.setVisible(text !== '');
@@ -564,11 +615,87 @@ export class GameScene extends Phaser.Scene {
       });
   }
 
+  /** "Runda N" and a big "3, 2, 1, FOC!" over the board at the start of every round. */
+  private createCountdown(): void {
+    const cx = BOARD_X + BOARD_W / 2;
+    const cy = BOARD_Y + BOARD_H / 2;
+    this.countdownRound = this.add
+      .text(cx, cy - 78, '', { fontFamily: FONT, fontSize: '24px', color: '#eaf2ff', stroke: '#000000', strokeThickness: 5 })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.countdown)
+      .setVisible(false);
+    this.countdownText = this.add
+      .text(cx, cy, '', { fontFamily: FONT, fontSize: '96px', fontStyle: 'bold', color: '#ffe066', stroke: '#7a1f2b', strokeThickness: 10 })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.countdown)
+      .setVisible(false);
+  }
+
+  private syncCountdown(state: Readonly<GameState>): void {
+    const running = state.phase === 'playing' && !this.transport.isPaused() && state.roundTick < COUNTDOWN_TICKS + FOC_SHOWN_TICKS;
+    this.countdownRound.setVisible(running);
+    this.countdownText.setVisible(running);
+    if (!running) {
+      this.lastCountdown = -1;
+      return;
+    }
+    const value = countdownSeconds(state.roundTick);
+    if (value === this.lastCountdown) return;
+    this.lastCountdown = value;
+    this.countdownRound.setText(`Runda ${state.round}`);
+    this.countdownText.setText(value > 0 ? String(value) : 'FOC!').setColor(value > 0 ? '#ffe066' : '#ff4d6d');
+    this.tweens.add({ targets: this.countdownText, scale: { from: 1.7, to: 1 }, alpha: { from: 0.3, to: 1 }, duration: 260, ease: 'Back.easeOut' });
+    playSfx(value > 0 ? 'numaratoare' : 'foc');
+  }
+
+  /** Held Tab: the match standings over the board. */
+  private createStandingsOverlay(): void {
+    const cx = BOARD_X + BOARD_W / 2;
+    const cy = BOARD_Y + BOARD_H / 2;
+    const bg = this.add
+      .rectangle(cx, cy, TABLE_W + 60, TABLE_H + 80, 0x0b1026, 0.93)
+      .setStrokeStyle(2, 0xffe066)
+      .setDepth(DEPTH.standings);
+    const title = this.add
+      .text(cx, cy - TABLE_H / 2 - 22, 'Clasament', { fontFamily: FONT, fontSize: '20px', color: '#ffe066' })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.standings);
+    this.standings = new StandingsTable(this, cx - TABLE_W / 2, cy - TABLE_H / 2 + 6);
+    this.standings.container.setDepth(DEPTH.standings);
+    this.standingsParts = [bg, title, this.standings.container];
+    for (const part of this.standingsParts) (part as Phaser.GameObjects.Rectangle).setVisible(false);
+  }
+
+  private syncStandingsOverlay(state: Readonly<GameState>): void {
+    const show = this.tabKey.isDown && state.phase !== 'finished';
+    for (const part of this.standingsParts) (part as Phaser.GameObjects.Rectangle).setVisible(show);
+    if (show) this.standings.update(state, this.transport.playerId, state.phase === 'playing' || state.phase === 'intermission');
+  }
+
+  /** The podium takes over the screen once the match is over. */
+  private syncPodium(state: Readonly<GameState>): void {
+    if (state.phase !== 'finished') {
+      this.podium?.destroy();
+      this.podium = undefined;
+      return;
+    }
+    if (this.podium) {
+      this.podium.update(state);
+      return;
+    }
+    this.podium = new Podium(this, state, {
+      me: this.transport.playerId,
+      depth: DEPTH.podium,
+      onAgain: () => this.restartMatch(),
+      againLabel: 'Încă un meci (Enter)',
+    });
+  }
+
   /** "Sigur ieși?" before leaving a match for good. */
   private createLeaveConfirm(): void {
     const cx = BOARD_X + BOARD_W / 2;
     const cy = BOARD_Y + BOARD_H / 2;
-    const depth = DEPTH.overlay + 1;
+    const depth = DEPTH.confirm;
     const bg = this.add.rectangle(cx, cy, 460, 170, 0x0b1026, 0.95).setStrokeStyle(2, 0xff8fa3).setDepth(depth);
     this.confirmText = this.add
       .text(cx, cy - 38, '', {
