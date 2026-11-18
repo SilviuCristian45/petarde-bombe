@@ -1,24 +1,20 @@
 import {
   addBot,
   addPlayer,
-  applyInput,
   backToLobby,
-  botDecide,
   createGameState,
   generateRoomCode,
-  onlyBotsAlive,
   removeBot,
+  runTick,
   setRounds,
-  sortedPlayers,
+  skipBotRound,
   startMatch,
-  step,
   TICK_MS,
-  TICK_RATE,
   type GameEvent,
   type GameState,
   type PlayerInput,
 } from '@petarde/shared';
-import type { ClientMessage, GameTransport } from './GameTransport';
+import type { ClientMessage, ConnectionStatus, GameTransport } from './GameTransport';
 
 export interface LocalOptions {
   name: string;
@@ -30,14 +26,13 @@ export interface LocalOptions {
 }
 
 const MAX_FRAME_MS = 250; // after a stall, catch up at most this much
-const MAX_SKIP_TICKS = 10 * 60 * TICK_RATE; // the shrinking arena ends every round well before this
 
 /** Runs the shared simulation in the browser, with bots filling the room. */
 export class LocalTransport implements GameTransport {
   readonly playerId = 'local';
+  readonly online = false;
   readonly pausable = true;
-  readonly skippable = true;
-  readonly botControls = true;
+  readonly closeReason = '';
   private readonly state: GameState;
   private readonly pending: PlayerInput[] = [];
   private readonly listeners = new Set<(events: GameEvent[]) => void>();
@@ -64,6 +59,7 @@ export class LocalTransport implements GameTransport {
     else if (msg.type === 'removeBot') removeBot(this.state, this.playerId);
     else if (msg.type === 'start') startMatch(this.state, this.playerId);
     else if (msg.type === 'lobby') backToLobby(this.state, this.playerId);
+    else if (msg.type === 'skipRound') this.skipRound();
   }
 
   onEvents(cb: (events: GameEvent[]) => void): () => void {
@@ -89,16 +85,14 @@ export class LocalTransport implements GameTransport {
     this.acc = 0;
   }
 
-  skipRound(): void {
-    if (!onlyBotsAlive(this.state)) return;
+  connectionStatus(): ConnectionStatus {
+    return 'connected';
+  }
+
+  private skipRound(): void {
     this.pending.length = 0;
-    // Effects of the skipped part (explosions, deaths) would all fire at once, so only the outcome is reported.
-    const outcome: GameEvent[] = [];
-    for (let i = 0; i < MAX_SKIP_TICKS && this.state.phase === 'playing'; i++) {
-      for (const e of this.simulate()) if (e.type === 'roundEnd' || e.type === 'matchEnd') outcome.push(e);
-    }
     this.acc = 0;
-    this.emit(outcome);
+    this.emit(skipBotRound(this.state));
   }
 
   dispose(): void {
@@ -110,16 +104,9 @@ export class LocalTransport implements GameTransport {
   }
 
   private tick(): void {
-    this.emit(this.simulate());
-  }
-
-  private simulate(): GameEvent[] {
-    for (const input of this.pending) applyInput(this.state, input);
+    const events = runTick(this.state, this.pending);
     this.pending.length = 0;
-    for (const p of sortedPlayers(this.state)) {
-      if (p.isBot && p.alive) applyInput(this.state, { playerId: p.id, action: botDecide(this.state, p.id) });
-    }
-    return step(this.state);
+    this.emit(events);
   }
 
   private emit(events: GameEvent[]): void {

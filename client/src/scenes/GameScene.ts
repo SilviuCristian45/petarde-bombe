@@ -32,6 +32,7 @@ import {
   TILE,
 } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
+import { ConnectionBanner } from '../ui/ConnectionBanner';
 
 export interface GameSceneData {
   transport: GameTransport;
@@ -71,6 +72,7 @@ export class GameScene extends Phaser.Scene {
   private controls!: InputSource;
   private debug?: DebugOverlay;
   private unsubscribe?: () => void;
+  private banner!: ConnectionBanner;
 
   private cellImages: Phaser.GameObjects.Image[] = [];
   private cellTypes: number[] = [];
@@ -160,12 +162,13 @@ export class GameScene extends Phaser.Scene {
       if (this.transport.pausable) this.transport.setPaused(!this.transport.isPaused());
     });
     this.input.keyboard!.on('keydown-ENTER', () => {
-      if (this.canSkipRound()) this.transport.skipRound();
+      if (this.canSkipRound()) this.transport.send({ type: 'skipRound' });
       else this.restartMatch();
     });
     this.unsubscribe = this.transport.onEvents((events) => this.handleEvents(events));
 
     if (this.debugEnabled) this.debug = new DebugOverlay(this);
+    this.banner = new ConnectionBanner(this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribe?.();
@@ -174,6 +177,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    if (!this.banner.update(this.transport, time)) return;
     for (const action of this.controls.poll()) this.transport.send({ type: 'input', action });
     this.transport.update(delta);
 
@@ -261,8 +265,10 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Only the host may fast-forward, and only once every human is dead (the server checks it too). */
   private canSkipRound(): boolean {
-    return this.transport.skippable && onlyBotsAlive(this.transport.getState());
+    const state = this.transport.getState();
+    return state.hostId === this.transport.playerId && onlyBotsAlive(state);
   }
 
   private restartMatch(): void {
@@ -402,7 +408,8 @@ export class GameScene extends Phaser.Scene {
       const left = SHRINK_START_TICKS - state.roundTick;
       timer = left > 0 ? `Strângere în ${formatTime(left)}` : 'Arena se strânge!';
     }
-    this.hudInfo.setText([`Cod: ${state.code}`, `Runda ${Math.max(1, state.round)}/${state.roundsTotal}`, timer].join('\n'));
+    const where = this.transport.online ? `Cod: ${state.code}` : 'Joc offline';
+    this.hudInfo.setText([where, `Runda ${Math.max(1, state.round)}/${state.roundsTotal}`, timer].join('\n'));
 
     const players = sortedPlayers(state);
     // Dead players stay crossed out until the next round starts.
@@ -416,7 +423,8 @@ export class GameScene extends Phaser.Scene {
       row.strike.setVisible(dead);
       if (!p) return;
       row.swatch.setFillStyle(PLAYER_COLORS[p.slot]!).setAlpha(dead ? 0.3 : 1);
-      const name = p.id === this.transport.playerId ? `${p.name} (tu)` : p.name;
+      const tag = p.id === this.transport.playerId ? ' (tu)' : p.left ? ' (a ieșit)' : !p.connected ? ' (...)' : '';
+      const name = p.name + tag;
       row.name.setText(name).setColor(dead ? '#5c6680' : '#ffffff');
       row.stats.setText(`${p.points} p  ${p.kills}k ${p.wins}w`).setColor(dead ? '#5c6680' : '#ffffff');
       if (dead) row.strike.setSize(Math.min(row.name.width, HUD_W - 20) + 4, 2);
@@ -434,7 +442,10 @@ export class GameScene extends Phaser.Scene {
       const title = winner ? `${winner.name} câștigă runda ${state.round}!` : 'Egalitate!';
       text = `${title}\n\n${standingsLines(state).join('\n')}\n\nRunda ${state.round + 1} în ${secs}...`;
     } else if (state.phase === 'finished') {
-      const again = state.hostId === this.transport.playerId ? `\n\nEnter: ${this.quick ? 'încă un meci' : 'înapoi în lobby'}` : '';
+      const again =
+        state.hostId === this.transport.playerId
+          ? `\n\nEnter: ${this.quick ? 'încă un meci' : 'înapoi în lobby'}`
+          : '\n\nHostul vă duce înapoi în lobby.';
       text = `Meci încheiat!\n\n${standingsLines(state).join('\n')}${again}`;
     } else if (state.phase === 'playing' && state.roundTick < ROUND_BANNER_TICKS) {
       text = `Runda ${state.round}!`;
@@ -488,7 +499,7 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
-        if (this.canSkipRound()) this.transport.skipRound();
+        if (this.canSkipRound()) this.transport.send({ type: 'skipRound' });
       });
   }
 

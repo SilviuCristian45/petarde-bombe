@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@colyseus/sdk": "^0.18.10",
     "@petarde/shared": "0.1.0",
     "phaser": "3.90.0"
   },

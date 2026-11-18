@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DEFAULT_ROUNDS, isValidRoomCode, MAX_PLAYERS, normalizeRoomCode, ROUND_OPTIONS } from '@petarde/shared';
 import { initMute } from './audio/sound';
 import { LocalTransport } from './net/LocalTransport';
+import { hasResumableRoom } from './net/rooms';
 import { GAME_H, GAME_W } from './render/layout';
 import { GameScene, type GameSceneData } from './scenes/GameScene';
 import { IntroScene } from './scenes/IntroScene';
@@ -31,6 +32,9 @@ function quickStart(): GameSceneData {
   };
 }
 
+// A reload during an online game skips the intro and reconnects to the same room.
+const resume = !quick && hasResumableRoom();
+
 // ?room=COD (invite link): after the intro, the menu only asks for a nickname and joins.
 function menuData(): MenuSceneData {
   const room = params.get('room');
@@ -50,9 +54,9 @@ const game = new Phaser.Game({
   dom: { createContainer: true }, // menu text inputs
 });
 initMute(game);
-game.scene.add('intro', IntroScene, !quick, menuData());
-game.scene.add('menu', MenuScene);
+game.scene.add('intro', IntroScene, !quick && !resume, menuData());
+game.scene.add('menu', MenuScene, resume, { ...menuData(), resume: true } satisfies MenuSceneData);
 game.scene.add('lobby', LobbyScene);
 game.scene.add('game', GameScene, quick, quick ? quickStart() : undefined);
 // Added last so it draws above every other scene; the intro launches it otherwise.
-game.scene.add('ui', UiScene, quick);
+game.scene.add('ui', UiScene, quick || resume);

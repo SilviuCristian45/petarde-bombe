@@ -8,7 +8,7 @@ import {
   sanitizeName,
 } from '@petarde/shared';
 import type { GameTransport } from '../net/GameTransport';
-import { createRoom, joinRoom } from '../net/rooms';
+import { createOfflineRoom, createRoom, joinRoom, onlineEnabled, resumeRoom, RoomError } from '../net/rooms';
 import { FONT, GAME_W } from '../render/layout';
 import { ensureTextures } from '../render/textures';
 import { load, save } from '../storage';
@@ -21,9 +21,12 @@ export interface MenuSceneData {
   invite?: string;
   /** Shown on arrival, e.g. an invalid invite link. */
   message?: string;
+  /** The tab was reloaded during an online game: reconnect to that room right away. */
+  resume?: boolean;
 }
 
 const CX = GAME_W / 2;
+const OFFLINE_LABEL = 'Joacă offline cu boți';
 const CODE_HINT = 'Codul are 6 caractere: litere și cifre, fără 0, O, 1, I, L.';
 
 /** Nickname plus "create room" / "join by code". Inputs are DOM elements over the canvas. */
@@ -34,6 +37,7 @@ export class MenuScene extends Phaser.Scene {
   private status!: Phaser.GameObjects.Text;
   private buttons: TextButton[] = [];
   private joinButton?: TextButton;
+  private offlineButton?: TextButton;
   private busy = false;
 
   constructor() {
@@ -45,6 +49,7 @@ export class MenuScene extends Phaser.Scene {
     this.buttons = [];
     this.codeInput = undefined;
     this.joinButton = undefined;
+    this.offlineButton = undefined;
     this.busy = false;
   }
 
@@ -58,30 +63,35 @@ export class MenuScene extends Phaser.Scene {
     this.nameInput.value = load('name') ?? '';
 
     const invite = this.opts.invite;
+    // Created before the inputs: their handlers write to it (the scene instance is reused between visits).
+    this.status = this.add
+      .text(CX, invite ? 456 : 444, this.opts.message ?? '', { fontFamily: FONT, fontSize: '15px', color: '#ff8fa3', align: 'center' })
+      .setOrigin(0.5);
     if (invite) {
       this.label(258, 'Ai fost invitat în room-ul');
       this.add
         .text(CX, 298, invite, { fontFamily: FONT, fontSize: '40px', color: '#ffe066', letterSpacing: 6 })
         .setOrigin(0.5);
-      this.joinButton = this.button(370, `Intră în ${invite}`, () => this.join(invite), 'primary');
-      this.button(430, 'Alt room', () => this.leaveInvite());
+      this.joinButton = this.button(360, `Intră în ${invite}`, () => this.join(invite), 'primary');
+      this.button(412, 'Alt room', () => this.leaveInvite());
+      // Only offered when the server turns out to be unreachable.
+      if (onlineEnabled) this.offlineButton = this.button(500, OFFLINE_LABEL, () => this.onPlayOffline()).setVisible(false);
       this.onEnter(this.nameInput, () => this.join(invite));
     } else {
-      this.button(256, 'Creează room', () => this.onCreateRoom(), 'primary');
-      this.label(316, 'sau intră cu un cod');
-      this.codeInput = this.field(354, 180, ROOM_CODE_LENGTH, 'COD');
+      this.button(246, 'Creează room', () => this.onCreateRoom(), 'primary');
+      this.label(300, 'sau intră cu un cod');
+      this.codeInput = this.field(336, 180, ROOM_CODE_LENGTH, 'COD');
       this.codeInput.classList.add('code');
       this.codeInput.addEventListener('input', () => this.onCodeInput());
-      this.joinButton = this.button(414, 'Intră cu cod', () => this.join(this.codeInput!.value));
+      this.joinButton = this.button(390, 'Intră cu cod', () => this.join(this.codeInput!.value));
+      if (onlineEnabled) this.offlineButton = this.button(496, OFFLINE_LABEL, () => this.onPlayOffline());
       this.onEnter(this.nameInput, () => this.onCreateRoom());
       this.onEnter(this.codeInput, () => this.join(this.codeInput!.value));
       this.onCodeInput();
     }
 
-    this.status = this.add
-      .text(CX, 480, this.opts.message ?? '', { fontFamily: FONT, fontSize: '15px', color: '#ff8fa3', align: 'center' })
-      .setOrigin(0.5);
     this.nameInput.focus();
+    if (this.opts.resume) void this.connect(resumeRoom(), 'Se reconectează la room...');
   }
 
   private label(y: number, text: string): void {
@@ -119,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
     if (code !== input.value) input.value = code;
     const bad = [...code].some((ch) => !ROOM_CODE_ALPHABET.includes(ch));
     input.classList.toggle('invalid', bad);
-    if (this.status) this.status.setText(bad ? CODE_HINT : '');
+    if (bad || this.status.text === CODE_HINT) this.status.setColor('#ff8fa3').setText(bad ? CODE_HINT : '');
     this.joinButton!.setEnabled(!this.busy && isValidRoomCode(code));
   }
 
@@ -131,6 +141,10 @@ export class MenuScene extends Phaser.Scene {
 
   private onCreateRoom(): void {
     void this.connect(createRoom(this.playerName()), 'Se creează room-ul...');
+  }
+
+  private onPlayOffline(): void {
+    void this.connect(createOfflineRoom(this.playerName()), 'Se pregătește jocul offline...');
   }
 
   private join(input: string): void {
@@ -145,6 +159,7 @@ export class MenuScene extends Phaser.Scene {
   private async connect(pending: Promise<GameTransport>, message: string): Promise<void> {
     if (this.busy) return;
     this.setBusy(true);
+    this.offerOffline(false);
     this.status.setColor('#d0d8f0').setText(message);
     try {
       const transport = await pending;
@@ -153,7 +168,15 @@ export class MenuScene extends Phaser.Scene {
     } catch (err) {
       this.setBusy(false);
       this.status.setColor('#ff8fa3').setText(err instanceof Error ? err.message : 'Nu s-a putut intra în room.');
+      // The server is down or full: put "Joacă offline cu boți" right under the message.
+      if (err instanceof RoomError && err.offline) this.offerOffline(true);
     }
+  }
+
+  private offerOffline(offer: boolean): void {
+    if (!this.offlineButton) return;
+    this.offlineButton.setVariant(offer ? 'primary' : 'secondary');
+    if (this.opts.invite) this.offlineButton.setVisible(offer);
   }
 
   private setBusy(busy: boolean): void {

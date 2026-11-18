@@ -1,15 +1,12 @@
-import type { Action, GameEvent, GameState } from '@petarde/shared';
+import type { ClientMessage, GameEvent, GameState } from '@petarde/shared';
 
 // Scenes only talk to the game through this interface, so the same rendering code
-// runs on top of the local simulation (LocalTransport) and, later, Colyseus.
+// runs on top of the local simulation (LocalTransport) and the Colyseus room (ColyseusTransport).
 
-export type ClientMessage =
-  | { type: 'input'; action: Action }
-  | { type: 'rounds'; rounds: number } // host, lobby: 3/5/7
-  | { type: 'addBot' } // host, lobby, only where botControls
-  | { type: 'removeBot' }
-  | { type: 'start' } // host: lobby -> round 1
-  | { type: 'lobby' }; // host: finished -> back to the lobby ("Încă un meci")
+export type { ClientMessage };
+
+/** Local games are always 'connected'; online ones go through 'reconnecting' after a drop. */
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'closed';
 
 export interface GameTransport {
   /** Id of the player controlled from this browser. */
@@ -21,15 +18,14 @@ export interface GameTransport {
   onEvents(cb: (events: GameEvent[]) => void): () => void;
   /** Called every frame with the elapsed real time. */
   update(dtMs: number): void;
+  /** A room on the server, which others can join with its code. */
+  readonly online: boolean;
   /** Only transports that own the simulation can pause it. */
   readonly pausable: boolean;
   isPaused(): boolean;
   setPaused(paused: boolean): void;
-  /** Whether the lobby offers +Bot/-Bot (the local game). */
-  readonly botControls: boolean;
-  /** Only transports that own the simulation can fast-forward a round that only bots are still playing. */
-  readonly skippable: boolean;
-  /** Simulates to the end of the current round at once (no-op unless onlyBotsAlive). */
-  skipRound(): void;
+  connectionStatus(): ConnectionStatus;
+  /** Why the connection closed, shown back in the menu. */
+  readonly closeReason: string;
   dispose(): void;
 }

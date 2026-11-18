@@ -4,6 +4,7 @@ import type { GameTransport } from '../net/GameTransport';
 import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
 import { drawBackdrop } from '../ui/backdrop';
+import { ConnectionBanner } from '../ui/ConnectionBanner';
 import { TextButton } from '../ui/TextButton';
 import type { GameSceneData } from './GameScene';
 
@@ -35,6 +36,7 @@ export class LobbyScene extends Phaser.Scene {
   private copyReset?: Phaser.Time.TimerEvent;
   private hint!: Phaser.GameObjects.Text;
   private countText!: Phaser.GameObjects.Text;
+  private banner!: ConnectionBanner;
 
   constructor() {
     super('lobby');
@@ -52,9 +54,13 @@ export class LobbyScene extends Phaser.Scene {
     drawBackdrop(this);
     const state = this.transport.getState();
 
-    this.add.text(GAME_W / 2, 34, 'Codul room-ului', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' }).setOrigin(0.5);
+    // An offline room has no code worth sharing: nobody else can join it.
+    const online = this.transport.online;
     this.add
-      .text(GAME_W / 2, 80, state.code, {
+      .text(GAME_W / 2, 34, online ? 'Codul room-ului' : 'Joc offline', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' })
+      .setOrigin(0.5);
+    this.add
+      .text(GAME_W / 2, 80, online ? state.code : 'cu boți', {
         fontFamily: FONT,
         fontSize: '56px',
         color: '#ffe066',
@@ -63,7 +69,7 @@ export class LobbyScene extends Phaser.Scene {
         letterSpacing: 8,
       })
       .setOrigin(0.5);
-    this.copyButton = new TextButton(this, GAME_W / 2, 140, 'Copiază link', () => void this.copyLink(), 'secondary', 16);
+    this.copyButton = new TextButton(this, GAME_W / 2, 140, 'Copiază link', () => void this.copyLink(), 'secondary', 16).setVisible(online);
 
     this.countText = this.add.text(LIST_X - 20, LIST_Y - 40, '', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' });
     for (let i = 0; i < MAX_PLAYERS; i++) {
@@ -89,9 +95,11 @@ export class LobbyScene extends Phaser.Scene {
       .text(SIDE_X, LIST_Y + 214, '', { fontFamily: FONT, fontSize: '14px', color: '#9aa6c8', align: 'center', wordWrap: { width: 300 } })
       .setOrigin(0.5, 0);
     new TextButton(this, SIDE_X, GAME_H - 50, 'Ieși din room', () => this.leave(), 'secondary', 14);
+    this.banner = new ConnectionBanner(this);
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
+    if (!this.banner.update(this.transport, time)) return;
     this.transport.update(delta);
     const state = this.transport.getState();
     if (state.phase !== 'lobby') {
@@ -128,9 +136,8 @@ export class LobbyScene extends Phaser.Scene {
       this.roundButtons[i]!.setVariant(state.roundsTotal === rounds ? 'primary' : 'secondary').setEnabled(isHost || state.roundsTotal === rounds);
     });
     const players = Object.values(state.players);
-    const bots = this.transport.botControls && isHost;
-    this.addBotButton.setVisible(bots).setEnabled(players.length < MAX_PLAYERS);
-    this.removeBotButton.setVisible(bots).setEnabled(players.some((p) => p.isBot));
+    this.addBotButton.setVisible(isHost).setEnabled(players.length < MAX_PLAYERS);
+    this.removeBotButton.setVisible(isHost).setEnabled(players.some((p) => p.isBot));
     this.startButton.setVisible(isHost).setEnabled(canStart(state, me));
     if (!isHost) this.hint.setText('Așteaptă ca hostul să pornească meciul.');
     else if (players.length < MIN_PLAYERS_TO_START) this.hint.setText(`Minim ${MIN_PLAYERS_TO_START} jucători pentru Start.`);
