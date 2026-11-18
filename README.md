@@ -34,7 +34,12 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
   `LocalTransport` rulează simularea din `/shared` în browser, cu boți; `ColyseusTransport` va urma.
 - Input-ul vine dintr-un `InputSource` (`client/src/input`); acum tastatură: săgeți/WASD + Spațiu.
 - Jucătorii sunt interpolați între ultimele două tick-uri; grafica e desenată procedural la pornire.
-- `P` pune pauză simulării locale (doar cu `LocalTransport`). `Enter` la final: încă un meci.
+- La moarte: artificii în culoarea jucătorului, "Ai murit!" cu cauza, apoi mod spectator;
+  în HUD morții apar tăiați până la runda următoare.
+- În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea
+  (harta e generată de `prepareRound` când începe pauza).
+- `P` pune pauză simulării locale (doar cu `LocalTransport`). `Enter` la final: încă un meci;
+  `Enter` când mai trăiesc doar boți: sare peste rundă (simulează instant până la final).
 
 Opțiuni din URL (joc local): `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
 Modul `?debug` afișează gridul cu coordonate, hitbox-urile (celula de sub centrul jucătorului),

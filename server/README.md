@@ -27,5 +27,8 @@ Deocamdată gol. Serverul multiplayer va fi implementat într-o etapă ulterioar
   - `onLeave(client, consented)`: dacă `!consented`, jucătorul e marcat `reconnecting`
     și se apelează `allowReconnection(client, 15)`; altfel e eliminat.
   - Boți: aceeași logică din `/shared/bot`, rulată pe server pentru completarea room-urilor.
+  - `onMessage('skipRound', ...)`: permis doar hostului și doar când toți jucătorii umani sunt morți
+    (`onlyBotsAlive(state)` din `/shared`); serverul simulează instant până la finalul rundei și
+    trimite doar rezultatul (`roundEnd` / `matchEnd`), ca `LocalTransport.skipRound`.
 - Clientul folosește `ColyseusTransport` (colyseus.js), care implementează interfața `GameTransport`
   din `client/src/net`, cu endpoint din `VITE_SERVER_URL`. Scenele nu se schimbă.
