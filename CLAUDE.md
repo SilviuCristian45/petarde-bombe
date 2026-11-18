@@ -57,7 +57,7 @@ Test URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?seed=ab
 2. Local rendering, input, debug overlay — done.
 3. Intro, menu, lobby — done.
 4. **Next: the Colyseus server** (`server/README.md`) plus `ColyseusTransport`, plugged into `client/src/net/rooms.ts`. This comes before the next stage of the original plan.
-5. Then the original plan's stage 4.
+5. Then stage 4 (polish): standings overlay on Tab; animated podium + full table at match end; snow and garlands; Web Audio sfx that can be replaced by files; `la-multi-ani.ogg` when a match is won; final README.
 
 ## Workflow
 
