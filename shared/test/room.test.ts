@@ -6,6 +6,7 @@ import {
   backToLobby,
   canStart,
   createGameState,
+  removeBot,
   removePlayer,
   sanitizeName,
   setRounds,
@@ -90,6 +91,23 @@ describe('lobby', () => {
     expect(r.ok).toBe(true);
     expect(s.players.x!.isBot).toBe(true);
     expect(s.players.x!.name).toBe('Capra');
+  });
+
+  it('only the host removes bots, newest first, and only in the lobby', () => {
+    const s = lobby();
+    addPlayer(s, 'a', 'A');
+    addPlayer(s, 'b', 'B');
+    addBot(s, 'a', 'x');
+    addBot(s, 'a', 'y');
+    expect(removeBot(s, 'b')).toBe(false);
+    expect(removeBot(s, 'a')).toBe(true);
+    expect(Object.keys(s.players)).toEqual(['a', 'b', 'x']);
+    startMatch(s, 'a');
+    expect(removeBot(s, 'a')).toBe(false);
+    s.phase = 'lobby';
+    expect(removeBot(s, 'a')).toBe(true);
+    expect(removeBot(s, 'a')).toBe(false); // humans are never removed
+    expect(Object.keys(s.players)).toEqual(['a', 'b']);
   });
 
   it('rejects joins during a match', () => {

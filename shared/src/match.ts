@@ -104,6 +104,17 @@ export function addBot(state: GameState, byId: string, botId: string): JoinResul
   return addPlayer(state, botId, name, true);
 }
 
+/** Removes the most recently added bot. Host-only, lobby-only. */
+export function removeBot(state: GameState, byId: string): boolean {
+  if (byId !== state.hostId || state.phase !== 'lobby') return false;
+  const bot = Object.values(state.players)
+    .filter((p) => p.isBot)
+    .sort((a, b) => b.joinOrder - a.joinOrder)[0];
+  if (!bot) return false;
+  removePlayer(state, bot.id);
+  return true;
+}
+
 /** Removes a player; if the host leaves, the next human by join order takes over. */
 export function removePlayer(state: GameState, id: string): void {
   if (!state.players[id]) return;
