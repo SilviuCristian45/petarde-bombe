@@ -1,5 +1,5 @@
-# systemd unit for the Bombe și Petarde game server.
-# Install: see server/README.md ("Deploy"). Paths assume /opt/bombe.
+# systemd unit for the Bombe și Petarde game server, installed by deploy/setup.sh.
+# /opt/bombe/current is a symlink to the active release (switched atomically by deploy/push.ps1).
 [Unit]
 Description=Bombe și Petarde (Colyseus)
 After=network-online.target
@@ -9,8 +9,8 @@ Wants=network-online.target
 Type=simple
 User=bombe
 Group=bombe
-WorkingDirectory=/opt/bombe/server
-ExecStart=/usr/bin/node /opt/bombe/server/dist/index.js
+WorkingDirectory=/opt/bombe/current/server
+ExecStart=/usr/bin/node /opt/bombe/current/server/index.js
 Environment=NODE_ENV=production
 Environment=PORT=2567
 Environment=MAX_ROOMS=20
@@ -21,11 +21,10 @@ RestartSec=3
 MemoryMax=300M
 Environment=NODE_OPTIONS=--max-old-space-size=200
 
-# Hardening: the process only needs to read its bundle and listen on loopback.
+# Hardening: the process only reads its bundle and listens on loopback.
 NoNewPrivileges=true
 ProtectSystem=strict
-# read-only, not true: a Node installed with nvm lives under /home/ubuntu
-ProtectHome=read-only
+ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
 ProtectKernelTunables=true
