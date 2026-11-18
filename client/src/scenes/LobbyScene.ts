@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
-import { canStart, MAX_PLAYERS, MIN_PLAYERS_TO_START, ROUND_OPTIONS, sortedPlayers, type GameState } from '@petarde/shared';
+import {
+  canStart,
+  MAX_PLAYERS,
+  MIN_PLAYERS_TO_START,
+  POINTS_KILL,
+  POINTS_ROUND_WIN,
+  POINTS_SUICIDE,
+  ROUND_OPTIONS,
+  sortedPlayers,
+  type GameState,
+} from '@petarde/shared';
 import type { GameTransport } from '../net/GameTransport';
 import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
@@ -95,6 +105,20 @@ export class LobbyScene extends Phaser.Scene {
       .text(SIDE_X, LIST_Y + 214, '', { fontFamily: FONT, fontSize: '14px', color: '#9aa6c8', align: 'center', wordWrap: { width: 300 } })
       .setOrigin(0.5, 0);
     new TextButton(this, SIDE_X, GAME_H - 50, 'Ieși din room', () => this.leave(), 'secondary', 14);
+
+    const rules = [
+      `Punctaj: ultimul în viață +${POINTS_ROUND_WIN} · kill +${POINTS_KILL}`,
+      `         propria petardă ${POINTS_SUICIDE}`,
+      'Lanț de petarde: kill-ul e al celui care l-a aprins.',
+    ];
+    this.add
+      .text(LIST_X - 20, LIST_Y + MAX_PLAYERS * ROW_H - 16, rules.join('\n'), {
+        fontFamily: FONT,
+        fontSize: '13px',
+        color: '#9aa6c8',
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
     this.banner = new ConnectionBanner(this);
   }
 

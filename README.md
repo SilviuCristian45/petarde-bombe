@@ -51,6 +51,8 @@ server/   server Colyseus autoritar care rulează aceeași simulare (vezi server
   locul 15 s); un reload al paginii te duce înapoi direct în room. Dacă nu se mai poate, revii în meniu.
 - Input-ul vine dintr-un `InputSource` (`client/src/input`); acum tastatură: săgeți/WASD + Spațiu.
 - Jucătorii sunt interpolați între ultimele două tick-uri; grafica e desenată procedural la pornire.
+- Punctele câștigate sau pierdute apar deasupra jucătorului (+1 kill, +3 rundă, −1 propria petardă);
+  regulile de punctaj sunt scrise și în lobby.
 - La moarte: artificii în culoarea jucătorului, "Ai murit!" cu cauza, apoi mod spectator;
   în HUD morții apar tăiați până la runda următoare.
 - În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea

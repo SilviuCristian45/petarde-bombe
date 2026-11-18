@@ -5,6 +5,9 @@ import {
   computeStandings,
   onlyBotsAlive,
   PLAYER_COLORS,
+  POINTS_KILL,
+  POINTS_ROUND_WIN,
+  POINTS_SUICIDE,
   SHRINK_START_TICKS,
   sortedPlayers,
   SUB,
@@ -59,10 +62,11 @@ interface LocalDeath {
   tick: number;
 }
 
-const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, dim: 9, overlay: 10 } as const;
+const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, dim: 9, popup: 9.5, overlay: 10 } as const;
 const ROUND_BANNER_TICKS = TICK_RATE; // "Runda N!" shown for 1 s
 const DEATH_BANNER_TICKS = Math.round(2.5 * TICK_RATE); // "Ai murit!", then spectator mode
 const DEATH_EFFECT_MS = 1400;
+const SCORE_POPUP_MS = 1600;
 
 /** Renders the shared GameState and forwards local input; knows nothing about where the state comes from. */
 export class GameScene extends Phaser.Scene {
@@ -211,11 +215,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleEvents(events: GameEvent[]): void {
+    // Points won or lost in this batch, per player (a double kill shows as one "+2").
+    const gained = new Map<string, number>();
+    const add = (id: string, points: number) => gained.set(id, (gained.get(id) ?? 0) + points);
     for (const e of events) {
       if (e.type === 'explosion') this.cameras.main.shake(120, 0.004);
-      else if (e.type === 'death') this.onDeath(e);
+      else if (e.type === 'death') {
+        this.onDeath(e);
+        if (e.suicide) add(e.playerId, POINTS_SUICIDE);
+        else if (e.killerId) add(e.killerId, POINTS_KILL);
+      } else if (e.type === 'roundEnd' && e.winnerId) add(e.winnerId, POINTS_ROUND_WIN);
       else if (e.type === 'roundStart') this.controls.reset();
     }
+    for (const [id, points] of gained) if (points !== 0) this.showScorePopup(id, points);
+  }
+
+  /** "+1" / "-1" / "+3" rising from where the player is (or was, if they just died). */
+  private showScorePopup(playerId: string, points: number): void {
+    const view = this.playerViews.get(playerId);
+    if (!view) return;
+    const label = points > 0 ? `+${points}` : `−${-points}`;
+    // Starts above the head, but never so high that the rise leaves the board.
+    const y = Math.max(view.body.y - TILE * 0.8, BOARD_Y + TILE * 1.2);
+    const text = this.add
+      .text(view.body.x, y, label, {
+        fontFamily: FONT,
+        fontSize: '26px',
+        fontStyle: 'bold',
+        color: points > 0 ? '#7cff9b' : '#ff6b81',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.popup);
+    this.tweens.add({
+      targets: text,
+      y: y - TILE * 0.8,
+      alpha: { from: 1, to: 0 },
+      scale: { from: 1.3, to: 1 },
+      duration: SCORE_POPUP_MS,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy(),
+    });
   }
 
   private onDeath(e: Extract<GameEvent, { type: 'death' }>): void {
@@ -512,7 +553,7 @@ export class GameScene extends Phaser.Scene {
     this.deathBg.setVisible(big);
     this.deathTitle.setVisible(big);
     this.deathCause.setVisible(big);
-    if (death && big) this.deathCause.setText(deathCause(state, death));
+    if (death && big) this.deathCause.setText(death.suicide ? `${deathCause(state, death)} (${POINTS_SUICIDE} punct)` : deathCause(state, death));
 
     const spectating = !!death && !big;
     this.spectatorText.setVisible(spectating);
