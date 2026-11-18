@@ -32,15 +32,19 @@ server/   server Colyseus autoritar care rulează aceeași simulare (vezi server
 
 ## Client (`/client`)
 
-- Scene: intro → meniu → lobby → joc (+ `UiScene` deasupra tuturor, cu butonul de mute).
+- Scene: intro → nickname → meniu → lobby → joc (+ `UiScene` deasupra tuturor: mute și fullscreen).
   - Intro: butonul "Intră" pornește `audio/intro.ogg` (fallback `.mp3`); dacă fișierul lipsește, e liniște.
-  - Meniu: nickname (salvat în `localStorage`, max 16), "Creează room" sau "Intră cu cod"
-    (6 caractere, uppercase automat, fără 0/O/1/I/L), plus "Joacă offline cu boți".
+  - Nickname: "Cum te cheamă?" (max 16, salvat în `localStorage`); cu un nume salvat doar
+    "Salut, {nume}!" cu "Continuă" / "Schimbă numele".
+  - Meniu: două carduri, "Creează joc" și "Intră la un prieten" (codul în 6 căsuțe: focus automat
+    pe următoarea, Backspace înapoi, paste pentru tot codul sau chiar linkul, fără 0/O/1/I/L;
+    intră singur la 6 caractere valide), plus "Joacă offline cu boți" ca opțiune secundară.
     Erori în română: cod inexistent, room plin, meci în desfășurare, server plin, server indisponibil;
     când serverul nu răspunde, butonul "Joacă offline cu boți" apare evidențiat chiar sub mesaj.
   - Lobby: codul, "Copiază link" (`/?room=COD`), jucătorii cu culori și coroniță la host;
     hostul alege 3/5/7 runde, adaugă/scoate boți și pornește meciul (minim 2 jucători).
-  - `?room=COD` duce, după intro, la un meniu care cere doar nickname-ul și intră în room.
+  - `?room=COD` duce, după intro și nickname ("Intri în camera COD"), direct în joc.
+  - Fullscreen: butonul de lângă mute sau tasta `F` (ascuns unde browserul nu are fullscreen).
   - După meci, `Enter` întoarce în lobby (același room).
 - Room-urile vin din `client/src/net/rooms.ts`: "Creează room" și "Intră cu cod" merg pe server,
   "Joacă offline cu boți" rulează totul în browser.
@@ -53,6 +57,8 @@ server/   server Colyseus autoritar care rulează aceeași simulare (vezi server
 - Jucătorii sunt interpolați între ultimele două tick-uri; grafica e desenată procedural la pornire.
 - Punctele câștigate sau pierdute apar deasupra jucătorului (+1 kill, +3 rundă, −1 propria petardă);
   regulile de punctaj sunt scrise și în lobby.
+- La prima rundă jucată apare jos, câteva secunde, "Săgeți / WASD = mișcare · Spațiu = petardă".
+- În modul spectator, "Părăsește meciul" (sau `Esc`) cere confirmare; rămâi în clasament ca "a ieșit".
 - La moarte: artificii în culoarea jucătorului, "Ai murit!" cu cauza, apoi mod spectator;
   în HUD morții apar tăiați până la runda următoare.
 - În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea
