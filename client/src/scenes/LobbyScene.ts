@@ -67,7 +67,7 @@ export class LobbyScene extends Phaser.Scene {
     // An offline room has no code worth sharing: nobody else can join it.
     const online = this.transport.online;
     this.add
-      .text(GAME_W / 2, 34, online ? 'Codul room-ului' : 'Joc offline', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' })
+      .text(GAME_W / 2, 34, online ? 'Codul jocului' : 'Joc offline', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' })
       .setOrigin(0.5);
     this.add
       .text(GAME_W / 2, 80, online ? state.code : 'cu boți', {
@@ -80,6 +80,11 @@ export class LobbyScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.copyButton = new TextButton(this, GAME_W / 2, 140, 'Copiază link', () => void this.copyLink(), 'secondary', 16).setVisible(online);
+    if (online) {
+      this.add
+        .text(GAME_W / 2, 172, 'Trimite linkul prietenilor ca să intre', { fontFamily: FONT, fontSize: '13px', color: '#9aa6c8' })
+        .setOrigin(0.5);
+    }
 
     this.countText = this.add.text(LIST_X - 20, LIST_Y - 40, '', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' });
     for (let i = 0; i < MAX_PLAYERS; i++) {
