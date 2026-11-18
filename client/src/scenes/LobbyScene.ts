@@ -14,6 +14,7 @@ import type { GameTransport } from '../net/GameTransport';
 import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
 import { drawBackdrop } from '../ui/backdrop';
+import { notifyPresence } from '../ui/presence';
 import { ConnectionBanner } from '../ui/ConnectionBanner';
 import { TextButton } from '../ui/TextButton';
 import type { GameSceneData } from './GameScene';
@@ -109,7 +110,7 @@ export class LobbyScene extends Phaser.Scene {
     this.hint = this.add
       .text(SIDE_X, LIST_Y + 214, '', { fontFamily: FONT, fontSize: '14px', color: '#9aa6c8', align: 'center', wordWrap: { width: 300 } })
       .setOrigin(0.5, 0);
-    new TextButton(this, SIDE_X, GAME_H - 50, 'Ieși din room', () => this.leave(), 'secondary', 14);
+    new TextButton(this, SIDE_X, GAME_H - 50, 'Ieși din joc', () => this.leave(), 'secondary', 14);
 
     const rules = [
       `Punctaj: ultimul în viață +${POINTS_ROUND_WIN} · kill +${POINTS_KILL}`,
@@ -130,6 +131,7 @@ export class LobbyScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (!this.banner.update(this.transport, time)) return;
     this.transport.update(delta);
+    notifyPresence(this.game, this.transport);
     const state = this.transport.getState();
     if (state.phase !== 'lobby') {
       const data: GameSceneData = { transport: this.transport, debug: false, quick: false };
@@ -183,6 +185,7 @@ export class LobbyScene extends Phaser.Scene {
     this.copyReset = this.time.delayedCall(COPIED_MS, () => this.copyButton.setText('Copiază link'));
   }
 
+  /** For good, no confirmation: the seat is freed at once and a reload does not come back. */
   private leave(): void {
     this.transport.dispose();
     this.scene.start('menu', {});

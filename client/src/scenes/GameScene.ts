@@ -37,6 +37,7 @@ import {
 import { ensureTextures, TEX } from '../render/textures';
 import { load, save } from '../storage';
 import { ConnectionBanner } from '../ui/ConnectionBanner';
+import { notifyPresence } from '../ui/presence';
 import { TextButton } from '../ui/TextButton';
 
 export interface GameSceneData {
@@ -105,10 +106,9 @@ export class GameScene extends Phaser.Scene {
   private deathCause!: Phaser.GameObjects.Text;
   private spectatorText!: Phaser.GameObjects.Text;
   private skipButton!: Phaser.GameObjects.Text;
-  private leaveButton!: Phaser.GameObjects.Text;
+  private confirmText!: Phaser.GameObjects.Text;
   private confirmParts: Phaser.GameObjects.GameObject[] = [];
   private confirmOpen = false;
-  private spectating = false;
   private localDeath?: LocalDeath;
 
   constructor() {
@@ -131,7 +131,6 @@ export class GameScene extends Phaser.Scene {
     this.localDeath = undefined;
     this.confirmParts = [];
     this.confirmOpen = false;
-    this.spectating = false;
   }
 
   create(): void {
@@ -181,10 +180,7 @@ export class GameScene extends Phaser.Scene {
       if (this.canSkipRound()) this.transport.send({ type: 'skipRound' });
       else this.restartMatch();
     });
-    this.input.keyboard!.on('keydown-ESC', () => {
-      if (this.confirmOpen) this.setConfirm(false);
-      else if (this.spectating) this.setConfirm(true);
-    });
+    this.input.keyboard!.on('keydown-ESC', () => this.setConfirm(!this.confirmOpen));
     this.unsubscribe = this.transport.onEvents((events) => this.handleEvents(events));
     if (state.phase === 'playing') this.showControlsHint();
 
@@ -201,6 +197,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.banner.update(this.transport, time)) return;
     for (const action of this.controls.poll()) this.transport.send({ type: 'input', action });
     this.transport.update(delta);
+    notifyPresence(this.game, this.transport);
 
     const state = this.transport.getState();
     if (state.phase === 'lobby') {
@@ -453,9 +450,12 @@ export class GameScene extends Phaser.Scene {
       const strike = this.add.rectangle(HUD_X + 18, y + 9, 1, 2, 0xff6b81).setOrigin(0, 0.5).setVisible(false);
       this.hudRows.push({ swatch, name, stats, strike });
     }
+    // Leaving is offered in every phase, alive or not; Esc does the same.
+    const leave = new TextButton(this, HUD_X, BOARD_Y + BOARD_H, 'Ieși (Esc)', () => this.setConfirm(true), 'secondary', 12);
+    leave.setOrigin(0, 1).setDepth(DEPTH.overlay);
     const help = ['Săgeți/WASD: mers', 'Spațiu: petardă'];
     if (this.transport.pausable) help.push('P: pauză');
-    this.add.text(HUD_X, BOARD_Y + BOARD_H - help.length * 17, help.join('\n'), {
+    this.add.text(HUD_X, leave.y - leave.height - 10 - help.length * 17, help.join('\n'), {
       fontFamily: FONT,
       fontSize: '12px',
       color: '#7f8bb0',
@@ -562,19 +562,6 @@ export class GameScene extends Phaser.Scene {
       .on('pointerdown', () => {
         if (this.canSkipRound()) this.transport.send({ type: 'skipRound' });
       });
-    this.leaveButton = this.add
-      .text(cx, BOARD_Y + 40, 'Esc: părăsește meciul', {
-        fontFamily: FONT,
-        fontSize: '14px',
-        color: '#eaf2ff',
-        backgroundColor: '#7a1f2b',
-        padding: { x: 10, y: 5 },
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(DEPTH.overlay)
-      .setVisible(false)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.setConfirm(true));
   }
 
   /** "Sigur ieși?" before leaving a match for good. */
@@ -583,8 +570,8 @@ export class GameScene extends Phaser.Scene {
     const cy = BOARD_Y + BOARD_H / 2;
     const depth = DEPTH.overlay + 1;
     const bg = this.add.rectangle(cx, cy, 460, 170, 0x0b1026, 0.95).setStrokeStyle(2, 0xff8fa3).setDepth(depth);
-    const text = this.add
-      .text(cx, cy - 38, 'Sigur ieși?\nRămâi în clasament ca „a ieșit”.', {
+    this.confirmText = this.add
+      .text(cx, cy - 38, '', {
         fontFamily: FONT,
         fontSize: '18px',
         color: '#ffffff',
@@ -593,18 +580,30 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(depth);
-    const yes = new TextButton(this, cx - 90, cy + 42, 'Da, ies', () => this.leaveMatch(), 'secondary', 18).setDepth(depth);
+    const yes = new TextButton(this, cx - 90, cy + 42, 'Da, ieși', () => this.leaveMatch(), 'secondary', 18).setDepth(depth);
     const no = new TextButton(this, cx + 90, cy + 42, 'Rămân', () => this.setConfirm(false), 'primary', 18).setDepth(depth);
-    this.confirmParts = [bg, text, yes, no];
+    this.confirmParts = [bg, this.confirmText, yes, no];
     this.setConfirm(false);
   }
 
   private setConfirm(open: boolean): void {
+    if (open) this.confirmText.setText(this.leaveWarning());
     this.confirmOpen = open;
     for (const part of this.confirmParts) (part as Phaser.GameObjects.Text).setVisible(open);
   }
 
-  /** Online the server then applies leavePlayer (dead, "a ieșit", host handed over); offline the game just ends. */
+  private leaveWarning(): string {
+    const state = this.transport.getState();
+    const me = state.players[this.transport.playerId];
+    if (state.phase === 'playing' && me?.alive) return 'Sigur ieși? Pierzi runda.';
+    if (!this.transport.online) return 'Sigur ieși?\nMeciul offline se încheie.';
+    return 'Sigur ieși?\nRămâi în clasament ca „a ieșit”.';
+  }
+
+  /**
+   * For good: a consented leave and no reconnection token. Online the server then applies leavePlayer
+   * (dead without a kill, "a ieșit" until the lobby, host handed over); offline the game just ends.
+   */
   private leaveMatch(): void {
     this.transport.dispose();
     this.scene.start('menu', {});
@@ -639,13 +638,10 @@ export class GameScene extends Phaser.Scene {
     if (death && big) this.deathCause.setText(death.suicide ? `${deathCause(state, death)} (${POINTS_SUICIDE} punct)` : deathCause(state, death));
 
     const spectating = !!death && !big;
-    // Esc works from the moment of death; the button waits for the spectator band.
-    this.spectating = !!death;
     this.spectatorText.setVisible(spectating);
     if (spectating) this.spectatorText.setText(`Mod spectator · ${deathCause(state, death)}`);
     const skip = spectating && this.canSkipRound();
-    this.skipButton.setVisible(skip).setX(BOARD_X + BOARD_W / 2 - (skip ? 120 : 0));
-    this.leaveButton.setVisible(spectating).setX(BOARD_X + BOARD_W / 2 + (skip ? 120 : 0));
+    this.skipButton.setVisible(skip);
   }
 }
 
