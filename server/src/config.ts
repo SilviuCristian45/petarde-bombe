@@ -7,6 +7,13 @@ export const PORT = Number(process.env.PORT ?? 2567);
 /** Rooms alive at once; one more "Creează room" is refused with "Serverul e plin". */
 export const MAX_ROOMS = Number(process.env.MAX_ROOMS ?? 20);
 
+/**
+ * All-time leaderboard database. bombe.service sets /var/lib/bombe/leaderboard.db; production never
+ * falls back to a path inside the release folder, which a later deploy would delete.
+ */
+export const DB_PATH =
+  process.env.DB_PATH ?? (process.env.NODE_ENV === 'production' ? '/var/lib/bombe/leaderboard.db' : 'data/leaderboard.db');
+
 /** Seconds a dropped player keeps their place. */
 export const RECONNECT_SECONDS = 15;
 

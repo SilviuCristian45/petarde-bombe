@@ -18,7 +18,12 @@ npm run build -w server   # typecheck + dist/index.js (un singur fișier)
 exact ca în producție Caddy.
 
 Variabile de mediu: `PORT` (implicit 2567), `HOST` (implicit `127.0.0.1`, doar loopback),
-`MAX_ROOMS` (implicit 20).
+`MAX_ROOMS` (implicit 20), `DB_PATH` (baza clasamentului; implicit `data/leaderboard.db` față de
+folderul din care pornește serverul, în producție `/var/lib/bombe/leaderboard.db`).
+
+`node:sqlite` e inclus în Node de la 22.13 fără flag (pe VPS: 22.23). Pe 22.12 cere
+`--experimental-sqlite`, pus deja în `npm run dev`, `npm start` și în config-ul vitest. Fără el
+serverul pornește oricum, doar fără clasament (o linie în log).
 
 ## Arhitectură
 
@@ -54,6 +59,20 @@ Variabile de mediu: `PORT` (implicit 2567), `HOST` (implicit `127.0.0.1`, doar l
   - `GET /health` → `{ ok, rooms, maxRooms, uptime }`;
   - `GET /rooms/:code` → `{ status: "open" | "full" | "playing" | "missing" }`. Colyseus răspunde la fel
     („locked”) pentru room plin și meci în desfășurare; clientul întreabă aici ca să afișeze mesajul corect.
+  - `GET /leaderboard` → `{ available, entries }`: top 15 (`LeaderboardEntry`: loc, porecla, puncte,
+    victorii, kill-uri, morți, runde, `endedAt` ISO în UTC). Cache 30 s în memorie (golit la fiecare meci
+    salvat) și `Cache-Control: public, max-age=30`.
+- Clasament (`src/leaderboard.ts`, SQLite în WAL):
+  - la `matchEnd` (o singură dată pe meci) room-ul salvează meciul: tabelul `matches` (room, ora UTC,
+    runde, câți oameni și câți boți) și câte un rând în `results` pentru fiecare om rămas până la final
+    (porecla, puncte, victorii, kill-uri, morți). Meciurile cu mai puțin de 2 oameni nu se salvează.
+    Clientul nu trimite niciun scor;
+  - clasamentul e un query: cel mai bun rând al fiecărei porecle (`name_key` = porecla cu litere mici),
+    ordonat după puncte, victorii, apoi cine l-a făcut primul;
+  - după salvare, mesajul `records` spune cine a intrat în top 15 sau și-a bătut recordul, cu locul;
+  - schema e creată/migrată la pornire (`schema_version` + lista `MIGRATIONS`, câte o tranzacție pe pas;
+    o schemă mai nouă decât codul, de ex. după un rollback, dezactivează doar clasamentul);
+  - orice eroare a bazei e doar logată: meciul și serverul merg mai departe.
 - Coduri de eroare (în `shared/src/protocol.ts`): `4001` server plin, `4002` room plin (boții ocupă și ei
   locuri), `4003` meci în desfășurare.
 
@@ -66,8 +85,8 @@ deci serverul vede `/matchmake/...`. Verificat în dev prin proxy-ul Vite, care 
 
 ## Deploy
 
-Ținta: VPS-ul Oracle (~1 GB RAM), împărțit cu jocul cu trenul. Un singur proces Node, fără Docker, Redis
-sau bază de date; room-urile trăiesc în memorie. Pe VPS ajung doar `server/dist/index.js` și `client/dist/`
+Ținta: VPS-ul Oracle (~1 GB RAM), împărțit cu jocul cu trenul. Un singur proces Node, fără Docker sau
+Redis; room-urile trăiesc în memorie, clasamentul într-un fișier SQLite (`/var/lib/bombe/leaderboard.db`). Pe VPS ajung doar `server/dist/index.js` și `client/dist/`
 (fără `node_modules`).
 
 Scripturile și pașii sunt în [`deploy/`](../deploy/README.md): `setup.sh` pentru prima instalare,

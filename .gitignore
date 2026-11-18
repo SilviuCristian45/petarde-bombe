@@ -6,6 +6,9 @@ dist/
 *.tsbuildinfo
 coverage/
 
+# Local leaderboard database (server/data/leaderboard.db)
+data/
+
 # Env
 .env
 .env.*

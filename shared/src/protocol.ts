@@ -33,3 +33,39 @@ export const ERR_IN_PROGRESS = 4003;
 export type RoomStatus = 'open' | 'full' | 'playing' | 'missing';
 
 export const ACTIONS: readonly Action[] = ['up', 'down', 'left', 'right', 'stop', 'bomb'];
+
+/** Server -> clients once a finished online match is saved: players who set a new all-time record. */
+export const MSG_RECORDS = 'records';
+export interface NewRecord {
+  playerId: string;
+  name: string;
+  /** 1-based place in the all-time leaderboard (one row per nickname). */
+  place: number;
+}
+export interface MatchRecords {
+  records: NewRecord[];
+}
+
+/** Rows in the all-time leaderboard (GET /leaderboard). */
+export const LEADERBOARD_SIZE = 15;
+/** Only online matches with at least this many human players count. */
+export const LEADERBOARD_MIN_HUMANS = 2;
+
+/** One row of GET /leaderboard: a nickname's best match. */
+export interface LeaderboardEntry {
+  place: number;
+  name: string;
+  points: number;
+  wins: number;
+  kills: number;
+  deaths: number;
+  rounds: number;
+  /** When the match ended, ISO 8601 in UTC. */
+  endedAt: string;
+}
+
+/** Answer of GET /leaderboard; `available` is false when the server has no database. */
+export interface LeaderboardResponse {
+  available: boolean;
+  entries: LeaderboardEntry[];
+}

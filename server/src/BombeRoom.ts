@@ -12,6 +12,7 @@ import {
   leavePlayer,
   MAX_PLAYERS,
   MSG_EVENTS,
+  MSG_RECORDS,
   removeBot,
   runTick,
   setBotLevel,
@@ -23,6 +24,7 @@ import {
   type Action,
   type GameEvent,
   type GameState,
+  type MatchRecords,
   type PlayerInput,
   type RoomStatus,
   type TickEvents,
@@ -35,6 +37,7 @@ import {
   TICK_INTERVAL_MS,
 } from './config';
 import { mirror } from './mirror';
+import { currentLeaderboard, matchResult } from './leaderboard';
 import { isCodeTaken, registerRoom, roomCount, unregisterRoom } from './registry';
 import { RoomState } from './schema';
 
@@ -167,6 +170,21 @@ export class BombeRoom extends Room<{ state: RoomState }> {
     if (events.length > 0) {
       const message: TickEvents = { tick: this.game.tick, events };
       this.broadcast(MSG_EVENTS, message);
+    }
+    // matchEnd happens once per match, from a tick or from a skipped round (sent with this tick).
+    if (events.some((e) => e.type === 'matchEnd')) this.saveMatch();
+  }
+
+  /** Writes the finished match to the all-time leaderboard. A database error is only logged. */
+  private saveMatch(): void {
+    const board = currentLeaderboard();
+    const result = matchResult(this.game, new Date());
+    if (!board || !result) return;
+    try {
+      const records = board.record(result);
+      if (records.length > 0) this.broadcast(MSG_RECORDS, { records } satisfies MatchRecords);
+    } catch (err) {
+      console.error(`Clasament: meciul din ${this.roomId} nu s-a putut salva:`, err);
     }
   }
 }
