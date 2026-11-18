@@ -10,6 +10,8 @@ Jocul rulează la **https://bombe-petarde.duckdns.org**, pe VPS-ul Oracle (Ubunt
 | versiunea activă / anterioară | symlink-urile `/opt/bombe/current` și `/opt/bombe/current.prev` |
 | clientul servit de Caddy | `/var/www/bombe` → `/opt/bombe/current/client` |
 | serviciul | `bombe.service` (Node pe `127.0.0.1:2567`, `MemoryMax=300M`, `Restart=always`) |
+| clasamentul | `/var/lib/bombe/leaderboard.db` (SQLite, WAL; `StateDirectory` al user-ului `bombe`) |
+| backup-ul clasamentului | `bombe-backup.timer` zilnic → `/var/lib/bombe/backups/leaderboard-AAAALLZZ.db`, ultimele 7 |
 | Caddy | blocul `bombe-petarde.duckdns.org` din `/etc/caddy/Caddyfile` |
 
 Trenul (`cabina-api`, `/var/www/cabina`, blocul `tren-api.duckdns.org`) nu e atins.
@@ -19,7 +21,9 @@ Fișiere:
 - `setup.sh`: instalarea inițială, pe VPS (o singură dată; poate fi rulat din nou fără efecte nedorite);
 - `push.ps1`: actualizare de pe Windows (build, upload, comutare atomică, health check, rollback);
 - `remote-update.sh`: partea de pe server a lui `push.ps1` (o urcă și o rulează el);
-- `bombe.service`, `Caddyfile`: unit-ul systemd și blocul Caddy, instalate de `setup.sh`.
+- `bombe.service`, `Caddyfile`: unit-ul systemd și blocul Caddy, instalate de `setup.sh`;
+- `bombe-backup.service`, `bombe-backup.timer`, `bombe-backup.sh`: backup-ul zilnic al clasamentului,
+  instalate tot de `setup.sh` (scriptul ajunge în `/usr/local/sbin/bombe-backup`).
 
 ## Înainte de prima instalare
 
@@ -43,7 +47,10 @@ ssh oracle "sudo bash /tmp/bombe-deploy/setup.sh"
 1. verifică Node 22 în `/usr/bin/node`; dacă lipsește (sau e mai vechi), îl instalează din depozitul NodeSource;
 2. creează user-ul `bombe`, `/opt/bombe/releases` și symlink-ul `/var/www/bombe`;
 3. instalează și activează `bombe.service` (îl repornește doar dacă unit-ul s-a schimbat);
-4. dacă `/etc/caddy/Caddyfile` nu conține încă `bombe-petarde.duckdns.org`: validează configurația existentă,
+4. instalează `sqlite3` (dacă lipsește) și backup-ul zilnic al clasamentului (`bombe-backup.timer`):
+   `sqlite3 .backup`, deci o copie consistentă chiar dacă serverul scrie în acel moment, verificată cu
+   `integrity_check`; se păstrează ultimele 7 zile;
+5. dacă `/etc/caddy/Caddyfile` nu conține încă `bombe-petarde.duckdns.org`: validează configurația existentă,
    face un backup cu dată și oră (`Caddyfile.bak-AAAALLZZ-HHMMSS`), adaugă blocul, validează din nou
    (dacă pică, restaurează backup-ul și se oprește), apoi `systemctl reload caddy` (fără restart: trenul
    nu are nicio întrerupere).
@@ -78,6 +85,12 @@ Dacă oricare health check pică, revine automat la versiunea anterioară: versi
 `current.prev` rămâne cum era. Pe server se păstrează versiunea activă, cea anterioară și încă trei.
 
 Un restart pierde room-urile în curs, deci actualizează când nu se joacă nimeni.
+
+Deploy-ul și rollback-ul lucrează doar în `/opt/bombe`: baza clasamentului (`/var/lib/bombe`) nu e
+atinsă niciodată. După o modificare a lui `bombe.service` sau a backup-ului, rulează din nou `setup.sh`
+(`push.ps1` nu instalează unit-uri). Backup manual: `sudo systemctl start bombe-backup`; restaurare:
+`sudo systemctl stop bombe`, copiază backup-ul peste `leaderboard.db` (șterge `-wal`/`-shm`, păstrează
+owner-ul `bombe`), `sudo systemctl start bombe`.
 
 ## Util
 

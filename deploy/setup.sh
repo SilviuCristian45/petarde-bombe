@@ -2,7 +2,8 @@
 # Prima instalare Bombe și Petarde pe VPS (Ubuntu). Rulează pe server, din folderul deploy/ copiat acolo:
 #   sudo bash /tmp/bombe-deploy/setup.sh
 # Idempotent: îl poți rula de mai multe ori. Atinge doar ce ține de bombe (user-ul bombe, /opt/bombe,
-# /var/www/bombe, bombe.service și blocul bombe-petarde.duckdns.org din Caddyfile); celelalte site-uri
+# /var/www/bombe, /var/lib/bombe, bombe.service, bombe-backup.{service,timer}, /usr/local/sbin/bombe-backup
+# și blocul bombe-petarde.duckdns.org din Caddyfile); celelalte site-uri
 # și servicii (ex. cabina-api, /var/www/cabina, tren-api.duckdns.org) rămân neatinse.
 # Codul jocului NU vine de aici: îl pune deploy/push.ps1 (de pe Windows), care îl și pornește.
 set -euo pipefail
@@ -16,6 +17,9 @@ BASE=/opt/bombe
 WEB=/var/www/bombe
 UNIT=bombe
 UNIT_FILE=/etc/systemd/system/$UNIT.service
+BACKUP_UNIT=bombe-backup
+BACKUP_SCRIPT=/usr/local/sbin/bombe-backup
+STATE=/var/lib/bombe
 CADDYFILE=/etc/caddy/Caddyfile
 NODE_MAJOR=22
 
@@ -23,7 +27,7 @@ say() { printf '\n==> %s\n' "$*"; }
 warn() { printf '\n!!! %s\n' "$*" >&2; }
 die() { printf '\nEROARE: %s\n' "$*" >&2; exit 1; }
 
-for f in "$HERE/bombe.service" "$HERE/Caddyfile"; do
+for f in "$HERE/bombe.service" "$HERE/Caddyfile" "$HERE/bombe-backup.service" "$HERE/bombe-backup.timer" "$HERE/bombe-backup.sh"; do
   [ -f "$f" ] || die "Lipsește $f. Copiază pe server tot folderul deploy/ (vezi deploy/README.md)."
 done
 command -v apt-get >/dev/null || die "Scriptul e pentru Ubuntu/Debian (apt-get)."
@@ -91,7 +95,29 @@ else
   echo "Încă nu e nicio versiune instalată: serviciul pornește la primul deploy/push.ps1."
 fi
 
-# 4. Caddy: blocul pentru domeniu, doar dacă lipsește
+# 4. Backup zilnic al clasamentului (/var/lib/bombe/leaderboard.db -> /var/lib/bombe/backups, ultimele 7 zile).
+# Baza o creează serverul la pornire, în StateDirectory (al user-ului bombe); deploy-ul și rollback-ul
+# lucrează doar în /opt/bombe, deci nu o ating niciodată.
+say "Backup zilnic al clasamentului"
+if ! command -v sqlite3 >/dev/null; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq sqlite3 >/dev/null
+  echo "am instalat sqlite3"
+fi
+# Scriptul vine poate de pe Windows: fără CRLF.
+tr -d '\r' < "$HERE/bombe-backup.sh" > "$BACKUP_SCRIPT.tmp"
+install -o root -g root -m 755 "$BACKUP_SCRIPT.tmp" "$BACKUP_SCRIPT"
+rm -f "$BACKUP_SCRIPT.tmp"
+for f in "$BACKUP_UNIT.service" "$BACKUP_UNIT.timer"; do
+  install -o root -g root -m 644 "$HERE/$f" "/etc/systemd/system/$f"
+done
+systemctl daemon-reload
+systemctl enable --now "$BACKUP_UNIT.timer" >/dev/null 2>&1
+echo "$BACKUP_UNIT.timer: $(systemctl show "$BACKUP_UNIT.timer" --property=NextElapseUSecRealtime --value)"
+if [ -d "$STATE" ]; then ls -la "$STATE"; fi
+
+# 5. Caddy: blocul pentru domeniu, doar dacă lipsește
 say "Caddy ($DOMAIN)"
 command -v caddy >/dev/null || die "Caddy nu e instalat (pe acest VPS ar trebui să existe deja, pentru celelalte site-uri)."
 [ -f "$CADDYFILE" ] || die "Nu găsesc $CADDYFILE."
@@ -129,4 +155,5 @@ cat <<EOF
   1. De pe Windows, din repo:  .\\deploy\\push.ps1      (build, upload, pornește serviciul, health check)
   2. DuckDNS: $DOMAIN trebuie să arate spre IP-ul acestui VPS.
   3. Porturile 80 și 443 deschise în Oracle (Security List/NSG) și în iptables. Portul 2567 NU se deschide.
+  Clasamentul: $STATE/leaderboard.db; backup manual: sudo systemctl start $BACKUP_UNIT
 EOF

@@ -1,0 +1,21 @@
+# Daily copy of the leaderboard database, started by bombe-backup.timer (installed by deploy/setup.sh).
+[Unit]
+Description=Bombe și Petarde: backup clasament
+After=bombe.service
+
+[Service]
+Type=oneshot
+User=bombe
+Group=bombe
+# Same directory and mode as bombe.service.
+StateDirectory=bombe
+StateDirectoryMode=0750
+ExecStart=/usr/local/sbin/bombe-backup
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true

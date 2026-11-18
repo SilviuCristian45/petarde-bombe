@@ -14,6 +14,11 @@ ExecStart=/usr/bin/node /opt/bombe/current/server/index.js
 Environment=NODE_ENV=production
 Environment=PORT=2567
 Environment=MAX_ROOMS=20
+# All-time leaderboard (SQLite, WAL). /var/lib/bombe belongs to the bombe user and lives outside
+# /opt/bombe, so deploys and rollbacks never touch it. node:sqlite needs no flag on Node >= 22.13.
+StateDirectory=bombe
+StateDirectoryMode=0750
+Environment=DB_PATH=/var/lib/bombe/leaderboard.db
 Restart=always
 RestartSec=3
 
@@ -21,7 +26,7 @@ RestartSec=3
 MemoryMax=300M
 Environment=NODE_OPTIONS=--max-old-space-size=200
 
-# Hardening: the process only reads its bundle and listens on loopback.
+# Hardening: the process reads its bundle, writes only its StateDirectory and listens on loopback.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
