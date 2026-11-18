@@ -30,6 +30,16 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
 
 ## Client (`/client`)
 
+- Scene: intro → meniu → lobby → joc (+ `UiScene` deasupra tuturor, cu butonul de mute).
+  - Intro: butonul "Intră" pornește `audio/intro.ogg` (fallback `.mp3`); dacă fișierul lipsește, e liniște.
+  - Meniu: nickname (salvat în `localStorage`, max 16), "Creează room" sau "Intră cu cod"
+    (6 caractere, uppercase automat, fără 0/O/1/I/L).
+  - Lobby: codul, "Copiază link" (`/?room=COD`), jucătorii cu culori și coroniță la host;
+    hostul alege 3/5/7 runde și pornește meciul (minim 2 jucători). Local: +Bot / -Bot.
+  - `?room=COD` duce, după intro, la un meniu care cere doar nickname-ul și intră în room.
+  - După meci, `Enter` întoarce în lobby (același room).
+- Room-urile vin din `client/src/net/rooms.ts`. Până la server, "Creează room" deschide un room local
+  cu un bot, iar intrarea cu cod spune că serverul online nu e disponibil încă.
 - Scenele citesc starea și trimit input-uri doar prin `GameTransport` (`client/src/net`).
   `LocalTransport` rulează simularea din `/shared` în browser, cu boți; `ColyseusTransport` va urma.
 - Input-ul vine dintr-un `InputSource` (`client/src/input`); acum tastatură: săgeți/WASD + Spațiu.
@@ -38,10 +48,12 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
   în HUD morții apar tăiați până la runda următoare.
 - În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea
   (harta e generată de `prepareRound` când începe pauza).
-- `P` pune pauză simulării locale (doar cu `LocalTransport`). `Enter` la final: încă un meci;
+- `P` pune pauză simulării locale (doar cu `LocalTransport`).
   `Enter` când mai trăiesc doar boți: sare peste rundă (simulează instant până la final).
 
-Opțiuni din URL (joc local): `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
+Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
+Oricare dintre ele sare peste intro, meniu și lobby și pornește direct un meci local;
+acolo `Enter` la final pornește imediat alt meci.
 Modul `?debug` afișează gridul cu coordonate, hitbox-urile (celula de sub centrul jucătorului),
 zonele de pericol, tick-ul, FPS-ul și intenția + drumul fiecărui bot.
 

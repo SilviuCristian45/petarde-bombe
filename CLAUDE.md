@@ -26,7 +26,7 @@ npm test -w shared -- -t "<test name substring>"
 npm run test:watch -w shared
 ```
 
-Local game URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?seed=abc`. `?debug` overlays grid coordinates, hitboxes, danger zones, tick/FPS and each bot's intent + planned path. In-game: `P` pauses (local only), `Enter` after a match starts another.
+Test URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?seed=abc`. Any of them skips intro/menu/lobby and starts a local match at once (`quick` mode: `Enter` after the match restarts immediately). `?debug` overlays grid coordinates, hitboxes, danger zones, tick/FPS and each bot's intent + planned path. `?room=COD` is the invite link: intro, then a nickname-only menu that joins. In-game: `P` pauses (local only).
 
 ## Architecture
 
@@ -39,6 +39,10 @@ Local game URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?s
 - Tests build states from ASCII maps via `makeState` in `test/helpers.ts` (`#` wall, `+` brick, `.` empty, `1`..`6` players `p1`..`p6`).
 
 ### `/client` — rendering only
+- Scene flow (wired in `main.ts` with `scene.add`, `UiScene` added last so it draws on top): `intro` → `menu` → `lobby` ⇄ `game`. `UiScene` holds the mute toggle from the intro on. Lobby and game hand the same transport back and forth by watching `state.phase` (`lobby` vs anything else); only "Ieși din room" disposes it. Phaser reuses scene instances, so per-match fields are reset in `init()`.
+- The menu gets rooms from `client/src/net/rooms.ts` (`createRoom` / `joinRoom`). Today `createRoom` returns a local room and `joinRoom` rejects ("server not available"); `ColyseusTransport` plugs in there.
+- Text inputs are Phaser DOM elements (`dom.createContainer`), styled by `.field` in `client/index.html`. `localStorage` goes through `client/src/storage.ts` (keys prefixed `petarde.`, failures ignored).
+- Optional audio goes through `client/src/audio/sound.ts`: files are fetched and decoded manually (the Phaser loader logs errors for missing files), and mute state is tracked there because WebAudio's `sound.mute` getter lags after being set.
 - Scenes never touch the simulation directly; they read state and send messages only through the `GameTransport` interface (`client/src/net/GameTransport.ts`). `LocalTransport` runs the shared simulation in-browser with bots and a fixed-step accumulator; a future `ColyseusTransport` (endpoint from `VITE_SERVER_URL`, see `client/.env.example`) must plug in without scene changes.
 - `skipRound()` fast-forwards a round once `onlyBotsAlive(state)` and reports only `roundEnd`/`matchEnd`. Locally it is always available then; **online it must be allowed only for the host and only when every human player is dead** (enforced server-side).
 - Input comes from an `InputSource` (`client/src/input`), polled once per frame; currently keyboard (arrows/WASD + Space), designed so touch can be added.
@@ -46,6 +50,14 @@ Local game URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?s
 
 ### `/server` — not implemented yet
 `server/README.md` is the design spec: a Colyseus `GameRoom` that runs the exact same `step()` from `/shared` via `setSimulationInterval`, copies state into schema, uses the 6-char room code as `roomId`, max 6 clients, joins only in lobby, host transfer, 15s reconnection, server-side bots. Deploy target is a small shared VPS (single Node process, no DB/Redis/Docker, systemd `MemoryMax=300M`, Caddy reverse proxy on `/colyseus/*`). Follow that plan when building the server.
+
+## Plan
+
+1. Shared game logic — done.
+2. Local rendering, input, debug overlay — done.
+3. Intro, menu, lobby — done.
+4. **Next: the Colyseus server** (`server/README.md`) plus `ColyseusTransport`, plugged into `client/src/net/rooms.ts`. This comes before the next stage of the original plan.
+5. Then the original plan's stage 4.
 
 ## Workflow
 
