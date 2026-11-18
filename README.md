@@ -58,7 +58,12 @@ server/   server Colyseus autoritar care rulează aceeași simulare (vezi server
 - Punctele câștigate sau pierdute apar deasupra jucătorului (+1 kill, +3 rundă, −1 propria petardă);
   regulile de punctaj sunt scrise și în lobby.
 - La prima rundă jucată apare jos, câteva secunde, "Săgeți / WASD = mișcare · Spațiu = petardă".
-- În modul spectator, "Părăsește meciul" (sau `Esc`) cere confirmare; rămâi în clasament ca "a ieșit".
+- "Ieși din joc" e oricând la îndemână: în lobby fără confirmare, în meci butonul "Ieși (Esc)" din
+  colț (sau `Esc`) cere confirmare ("Pierzi runda." dacă ești în viață). Ieșirea e definitivă: locul
+  se eliberează imediat, un reload nu te mai bagă înapoi, iar în meciul curent rămâi în clasament ca
+  "a ieșit" până la întoarcerea în lobby. Doar căderea rețelei păstrează locul 15 s.
+- Toast-uri în colțul din dreapta sus (maxim 3, dispar după ~3 s), în culoarea jucătorului:
+  "a intrat în joc", "a ieșit din joc", "s-a deconectat...", "a revenit", "e acum host".
 - La moarte: artificii în culoarea jucătorului, "Ai murit!" cu cauza, apoi mod spectator;
   în HUD morții apar tăiați până la runda următoare.
 - În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea
