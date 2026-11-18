@@ -65,57 +65,9 @@ deci serverul vede `/matchmake/...`. Verificat în dev prin proxy-ul Vite, care 
 
 ## Deploy
 
-Ținta: VPS Oracle free tier (~1 GB RAM), împărțit cu alt proiect (Flask + Caddy). Un singur proces Node,
-fără Docker, Redis sau bază de date; room-urile trăiesc în memorie. Fișierele sunt în `server/deploy/`:
+Ținta: VPS-ul Oracle (~1 GB RAM), împărțit cu jocul cu trenul. Un singur proces Node, fără Docker, Redis
+sau bază de date; room-urile trăiesc în memorie. Pe VPS ajung doar `server/dist/index.js` și `client/dist/`
+(fără `node_modules`).
 
-- `bombe.service`: unit systemd (user dedicat `bombe`, `MemoryMax=300M`, `Restart=always`, `PORT=2567`,
-  hardening de bază);
-- `Caddyfile`: blocul pentru subdomeniu (`handle_path /colyseus/*` → `127.0.0.1:2567`, restul servește
-  `client/dist`).
-
-Domeniul: `bombe-petarde.duckdns.org` (în DuckDNS trebuie să arate spre IP-ul VPS-ului; porturile
-80 și 443 deschise în Security List-ul Oracle și în firewall-ul VPS-ului, ca să poată Caddy să ia certificatul).
-
-Pe VPS e nevoie doar de Node ≥ 22.12 și Caddy. Fără `npm install`, fără `node_modules`.
-
-1. Build local, din rădăcina repo-ului:
-   ```bash
-   npm ci
-   npm test
-   npm run build            # client/dist/ + server/dist/index.js
-   ```
-   `VITE_SERVER_URL` rămâne implicit `/colyseus` (același domeniu), deci nu e nevoie de `.env`.
-   Pe VPS ajung doar:
-   - `server/dist/index.js`: serverul complet (`/shared` și toate dependențele incluse);
-     `index.js.map` nu e necesar;
-   - `client/dist/` (tot folderul): `index.html` + `assets/`;
-   - `server/deploy/bombe.service` și `server/deploy/Caddyfile`.
-2. Copiază (de pe mașina locală, din rădăcina repo-ului; înlocuiește `<IP>` cu adresa VPS-ului):
-   ```bash
-   ssh ubuntu@<IP> "rm -rf /tmp/bombe && mkdir -p /tmp/bombe"
-   scp server/dist/index.js server/deploy/bombe.service server/deploy/Caddyfile ubuntu@<IP>:/tmp/bombe/
-   scp -r client/dist ubuntu@<IP>:/tmp/bombe/client-dist
-   ```
-3. Pe VPS, prima dată (user dedicat, directoare, serviciu, Caddy):
-   ```bash
-   which node && node -v    # dacă nu e /usr/bin/node, pune calea în ExecStart din /tmp/bombe/bombe.service
-   sudo useradd --system --no-create-home --shell /usr/sbin/nologin bombe
-   sudo mkdir -p /opt/bombe/server/dist /opt/bombe/client
-   sudo install -m 0644 /tmp/bombe/bombe.service /etc/systemd/system/bombe.service
-   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
-   sudo tee -a /etc/caddy/Caddyfile < /tmp/bombe/Caddyfile > /dev/null   # o singură dată!
-   ```
-4. Pe VPS, la fiecare deploy (inclusiv primul):
-   ```bash
-   sudo install -m 0644 /tmp/bombe/index.js /opt/bombe/server/dist/index.js
-   sudo rm -rf /opt/bombe/client/dist && sudo cp -r /tmp/bombe/client-dist /opt/bombe/client/dist
-   sudo chmod -R a+rX /opt/bombe
-   sudo systemctl daemon-reload
-   sudo systemctl enable bombe
-   sudo systemctl restart bombe          # room-urile în curs se pierd
-   curl -s http://127.0.0.1:2567/health
-   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
-   curl -s https://bombe-petarde.duckdns.org/colyseus/health
-   ```
-
-Loguri: `journalctl -u bombe -f`.
+Scripturile și pașii sunt în [`deploy/`](../deploy/README.md): `setup.sh` pentru prima instalare,
+`push.ps1` (de pe Windows) pentru actualizări, cu comutare atomică și rollback.

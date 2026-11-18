@@ -91,4 +91,5 @@ npm run build      # build static în client/dist + server/dist/index.js (un sin
 
 Endpoint-ul serverului se configurează prin `VITE_SERVER_URL` (vezi `client/.env.example`):
 implicit `/colyseus` pe același domeniu, gol = build doar offline.
-Deploy (VPS cu systemd + Caddy): pașii sunt în `server/README.md`, fișierele în `server/deploy/`.
+Deploy pe VPS (systemd + Caddy, https://bombe-petarde.duckdns.org): `deploy/README.md`;
+actualizare de pe Windows cu `.deploypush.ps1`.

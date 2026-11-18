@@ -57,7 +57,11 @@ Test URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?seed=ab
 - `BombeRoom` (room name `bombe`): the 6-char code is the `roomId` (clients `joinById(code)`), `MAX_ROOMS` cap in `onCreate`, `lock()` at Start / `unlock()` back in the lobby. Every tick: `runTick` → `mirror()` into the schema → broadcast `{ tick, events }`. Events produced outside a tick (leaves, skips) go out with the next one.
 - All validation is server-side: player id from the connection, inputs only while playing (30/s, extra ignored; >60 msgs/s disconnects), host-only lobby actions via the `/shared` functions. `onDrop` keeps the seat 15 s; `onLeave` = `leavePlayer`.
 - `GET /health`, and `GET /rooms/:code` because Colyseus reports a full room and a running match the same way ("locked").
-- Production: `node dist/index.js` (esbuild bundle with `/shared` and all deps, no `node_modules`), loopback only, `PORT`/`MAX_ROOMS` from env. `server/deploy/` has the systemd unit and the Caddy block (`handle_path /colyseus/*`); the SDK keeps the path prefix as long as the server never sets `publicAddress`. Never deploy from here; only prepare files.
+- Production: `node dist/index.js` (esbuild bundle with `/shared` and all deps, no `node_modules`), loopback only, `PORT`/`MAX_ROOMS` from env. The SDK keeps the `/colyseus` path prefix as long as the server never sets `publicAddress`.
+
+### `/deploy` — Oracle VPS (Ubuntu, SSH alias `oracle`, https://bombe-petarde.duckdns.org)
+- `setup.sh` (first install on the VPS, idempotent), `push.ps1` (Windows: test/typecheck/build, tar.gz upload, `-WhatIf`, `-Rollback`), `remote-update.sh` (server side of push: releases under `/opt/bombe/releases`, atomic `current`/`current.prev` symlink switch, health check with automatic rollback), `bombe.service`, `Caddyfile` block.
+- The VPS also hosts the train game (`cabina-api`, `/var/www/cabina`, `tren-api.duckdns.org`): never touch it. Never run anything on the VPS from here; only prepare and dry-run (`push.ps1 -WhatIf`).
 
 ## Plan
 
