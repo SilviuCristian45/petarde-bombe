@@ -88,6 +88,21 @@ describe('scoring', () => {
     expect(s.players.p1!.wins).toBe(1); // match totals survive
   });
 
+  it('lays out the next map as soon as the intermission starts, and plays on it', () => {
+    const s = makeState(ARENA);
+    s.players.p3!.alive = false;
+    addBomb(s, 1, 4, 'p1', 1, 1);
+    run(s, ROUND_END_DELAY_TICKS);
+    expect(s.phase).toBe('intermission');
+    expect(s.grid).not.toEqual(makeState(ARENA).grid);
+    expect(s.flames).toHaveLength(0);
+    expect(s.bombs).toHaveLength(0);
+    const next = [...s.grid];
+    run(s, INTERMISSION_TICKS);
+    expect(s.phase).toBe('playing');
+    expect(s.grid).toEqual(next);
+  });
+
   it('ends the match after the last round with standings', () => {
     const s = makeState(ARENA);
     s.roundsTotal = 3;

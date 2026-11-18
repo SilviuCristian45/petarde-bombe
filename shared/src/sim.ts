@@ -25,7 +25,7 @@ import {
   SPEED_STEP,
 } from './constants';
 import { blastCells, bombAt, cellCenter, cellIndex, cellOf, isBlocked } from './grid';
-import { computeStandings, startRound, sortedPlayers } from './match';
+import { computeStandings, prepareRound, startRound, sortedPlayers } from './match';
 import { nextInt, nextRandom } from './rng';
 import { isShrinkTick, shrinkOrder } from './shrink';
 import type { Action, BombState, FlameState, GameEvent, GameState, PlayerInput, PlayerState } from './types';
@@ -308,5 +308,6 @@ function checkRoundEnd(state: GameState, events: GameEvent[]): void {
   } else {
     state.phase = 'intermission';
     state.phaseTimer = INTERMISSION_TICKS;
+    prepareRound(state);
   }
 }

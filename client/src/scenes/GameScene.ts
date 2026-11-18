@@ -56,7 +56,7 @@ interface LocalDeath {
   tick: number;
 }
 
-const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, overlay: 10 } as const;
+const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, dim: 9, overlay: 10 } as const;
 const ROUND_BANNER_TICKS = TICK_RATE; // "Runda N!" shown for 1 s
 const DEATH_BANNER_TICKS = Math.round(2.5 * TICK_RATE); // "Ai murit!", then spectator mode
 const DEATH_EFFECT_MS = 1400;
@@ -84,6 +84,7 @@ export class GameScene extends Phaser.Scene {
 
   private hudInfo!: Phaser.GameObjects.Text;
   private hudRows: HudRow[] = [];
+  private boardDim!: Phaser.GameObjects.Rectangle;
   private overlayBg!: Phaser.GameObjects.Rectangle;
   private overlayText!: Phaser.GameObjects.Text;
   private deathBg!: Phaser.GameObjects.Rectangle;
@@ -118,6 +119,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.createHud();
+    // Between rounds the next map is already laid out; it is shown dimmed under the scores.
+    this.boardDim = this.add
+      .rectangle(BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H / 2, BOARD_W, BOARD_H, 0x0b1026, 0.65)
+      .setDepth(DEPTH.dim)
+      .setVisible(false);
     this.overlayBg = this.add
       .rectangle(BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H / 2, BOARD_W * 0.6, 120, 0x0b1026, 0.85)
       .setStrokeStyle(2, 0xffe066)
@@ -407,17 +413,15 @@ export class GameScene extends Phaser.Scene {
     } else if (state.phase === 'intermission') {
       const winner = state.players[state.roundWinner];
       const secs = Math.ceil(state.phaseTimer / TICK_RATE);
-      text = `${winner ? `${winner.name} câștigă runda ${state.round}!` : 'Egalitate!'}\n\nRunda următoare în ${secs}...`;
+      const title = winner ? `${winner.name} câștigă runda ${state.round}!` : 'Egalitate!';
+      text = `${title}\n\n${standingsLines(state).join('\n')}\n\nRunda ${state.round + 1} în ${secs}...`;
     } else if (state.phase === 'finished') {
-      const lines = computeStandings(state).map((id, i) => {
-        const p = state.players[id]!;
-        return `${i + 1}. ${p.name.padEnd(12)} ${String(p.points).padStart(3)} p`;
-      });
       const again = state.hostId === this.transport.playerId ? '\n\nEnter: încă un meci' : '';
-      text = `Meci încheiat!\n\n${lines.join('\n')}${again}`;
+      text = `Meci încheiat!\n\n${standingsLines(state).join('\n')}${again}`;
     } else if (state.phase === 'playing' && state.roundTick < ROUND_BANNER_TICKS) {
       text = `Runda ${state.round}!`;
     }
+    this.boardDim.setVisible(state.phase === 'intermission');
     this.overlayText.setText(text);
     this.overlayBg.setVisible(text !== '');
     if (text) this.overlayBg.setSize(BOARD_W * 0.6, this.overlayText.height + 40).setOrigin(0.5);
@@ -486,6 +490,13 @@ export class GameScene extends Phaser.Scene {
     if (spectating) this.spectatorText.setText(`Mod spectator · ${deathCause(state, death)}`);
     this.skipButton.setVisible(spectating && this.canSkipRound());
   }
+}
+
+function standingsLines(state: Readonly<GameState>): string[] {
+  return computeStandings(state).map((id, i) => {
+    const p = state.players[id]!;
+    return `${i + 1}. ${p.name.padEnd(12)} ${String(p.points).padStart(3)} p`;
+  });
 }
 
 function deathCause(state: Readonly<GameState>, death: LocalDeath): string {

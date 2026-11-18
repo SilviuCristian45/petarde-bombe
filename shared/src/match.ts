@@ -144,6 +144,7 @@ export function startMatch(state: GameState, byId: string): boolean {
     p.points = 0;
   }
   state.round = 1;
+  prepareRound(state);
   startRound(state);
   return true;
 }
@@ -161,17 +162,21 @@ export function backToLobby(state: GameState, byId: string): boolean {
   return true;
 }
 
-/** Fresh seeded map, everyone back at their spawn with base stats. */
-export function startRound(state: GameState): void {
-  state.phase = 'playing';
+/** Lays out the next round's fresh seeded map; it is already shown (dimmed) during the intermission. */
+export function prepareRound(state: GameState): void {
   state.grid = generateGrid(state);
   state.bombs = [];
   state.flames = [];
   state.powerups = [];
+  state.shrinkIndex = 0;
+}
+
+/** Everyone back at their spawn with base stats, on the map laid out by prepareRound. */
+export function startRound(state: GameState): void {
+  state.phase = 'playing';
   state.roundTick = 0;
   state.phaseTimer = 0;
   state.endingTimer = 0;
-  state.shrinkIndex = 0;
   state.roundWinner = '';
   const spawns = spawnPoints(state.width, state.height);
   for (const p of sortedPlayers(state)) {
