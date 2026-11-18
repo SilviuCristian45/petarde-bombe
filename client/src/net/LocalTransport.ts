@@ -7,6 +7,8 @@ import {
   createGameState,
   generateRoomCode,
   onlyBotsAlive,
+  removeBot,
+  setRounds,
   sortedPlayers,
   startMatch,
   step,
@@ -23,6 +25,8 @@ export interface LocalOptions {
   bots: number;
   rounds: number;
   seed: string;
+  /** Start round 1 right away (debug URL options) instead of waiting in the lobby. */
+  autoStart: boolean;
 }
 
 const MAX_FRAME_MS = 250; // after a stall, catch up at most this much
@@ -33,18 +37,20 @@ export class LocalTransport implements GameTransport {
   readonly playerId = 'local';
   readonly pausable = true;
   readonly skippable = true;
+  readonly botControls = true;
   private readonly state: GameState;
   private readonly pending: PlayerInput[] = [];
   private readonly listeners = new Set<(events: GameEvent[]) => void>();
   private acc = 0;
   private paused = false;
+  private botCounter = 0;
 
   constructor(opts: LocalOptions) {
     this.state = createGameState({ code: generateRoomCode(Math.random), seed: opts.seed });
     addPlayer(this.state, this.playerId, opts.name);
-    for (let i = 0; i < opts.bots; i++) addBot(this.state, this.playerId, `bot${i + 1}`);
-    this.state.roundsTotal = opts.rounds;
-    startMatch(this.state, this.playerId);
+    for (let i = 0; i < opts.bots; i++) this.addBot();
+    setRounds(this.state, this.playerId, opts.rounds);
+    if (opts.autoStart) startMatch(this.state, this.playerId);
   }
 
   getState(): Readonly<GameState> {
@@ -53,6 +59,9 @@ export class LocalTransport implements GameTransport {
 
   send(msg: ClientMessage): void {
     if (msg.type === 'input') this.pending.push({ playerId: this.playerId, action: msg.action });
+    else if (msg.type === 'rounds') setRounds(this.state, this.playerId, msg.rounds);
+    else if (msg.type === 'addBot') this.addBot();
+    else if (msg.type === 'removeBot') removeBot(this.state, this.playerId);
     else if (msg.type === 'start') startMatch(this.state, this.playerId);
     else if (msg.type === 'lobby') backToLobby(this.state, this.playerId);
   }
@@ -94,6 +103,10 @@ export class LocalTransport implements GameTransport {
 
   dispose(): void {
     this.listeners.clear();
+  }
+
+  private addBot(): void {
+    addBot(this.state, this.playerId, `bot${++this.botCounter}`);
   }
 
   private tick(): void {

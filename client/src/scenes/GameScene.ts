@@ -31,11 +31,13 @@ import {
   subToScreenY,
   TILE,
 } from '../render/layout';
-import { createTextures, TEX } from '../render/textures';
+import { ensureTextures, TEX } from '../render/textures';
 
 export interface GameSceneData {
   transport: GameTransport;
   debug: boolean;
+  /** Debug URL start: Enter after the match restarts it at once instead of going back to the lobby. */
+  quick: boolean;
 }
 
 interface PlayerView {
@@ -65,6 +67,7 @@ const DEATH_EFFECT_MS = 1400;
 export class GameScene extends Phaser.Scene {
   private transport!: GameTransport;
   private debugEnabled = false;
+  private quick = false;
   private controls!: InputSource;
   private debug?: DebugOverlay;
   private unsubscribe?: () => void;
@@ -101,10 +104,21 @@ export class GameScene extends Phaser.Scene {
   init(data: GameSceneData): void {
     this.transport = data.transport;
     this.debugEnabled = data.debug;
+    this.quick = data.quick;
+    // Phaser reuses the scene instance on every start: forget the previous match's views.
+    this.debug = undefined;
+    this.cellImages = [];
+    this.cellTypes = [];
+    this.hudRows = [];
+    for (const views of [this.bombViews, this.flameViews, this.powerupViews, this.playerViews, this.prevPos, this.curPos]) {
+      views.clear();
+    }
+    this.lastTick = -1;
+    this.localDeath = undefined;
   }
 
   create(): void {
-    if (!this.textures.exists(TEX.wall)) createTextures(this);
+    ensureTextures(this);
     const state = this.transport.getState();
 
     for (let y = 0; y < state.height; y++) {
@@ -156,7 +170,6 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribe?.();
       this.controls.destroy();
-      this.transport.dispose();
     });
   }
 
@@ -165,6 +178,10 @@ export class GameScene extends Phaser.Scene {
     this.transport.update(delta);
 
     const state = this.transport.getState();
+    if (state.phase === 'lobby') {
+      this.scene.start('lobby', { transport: this.transport });
+      return;
+    }
     if (state.tick !== this.lastTick) {
       this.lastTick = state.tick;
       this.tickAt = time;
@@ -251,8 +268,9 @@ export class GameScene extends Phaser.Scene {
   private restartMatch(): void {
     const state = this.transport.getState();
     if (state.phase !== 'finished' || state.hostId !== this.transport.playerId) return;
+    // Back in the lobby phase, update() hands over to the lobby scene; quick mode starts again right away.
     this.transport.send({ type: 'lobby' });
-    this.transport.send({ type: 'start' });
+    if (this.quick) this.transport.send({ type: 'start' });
   }
 
   private syncGrid(state: Readonly<GameState>): void {
@@ -416,7 +434,7 @@ export class GameScene extends Phaser.Scene {
       const title = winner ? `${winner.name} câștigă runda ${state.round}!` : 'Egalitate!';
       text = `${title}\n\n${standingsLines(state).join('\n')}\n\nRunda ${state.round + 1} în ${secs}...`;
     } else if (state.phase === 'finished') {
-      const again = state.hostId === this.transport.playerId ? '\n\nEnter: încă un meci' : '';
+      const again = state.hostId === this.transport.playerId ? `\n\nEnter: ${this.quick ? 'încă un meci' : 'înapoi în lobby'}` : '';
       text = `Meci încheiat!\n\n${standingsLines(state).join('\n')}${again}`;
     } else if (state.phase === 'playing' && state.roundTick < ROUND_BANNER_TICKS) {
       text = `Runda ${state.round}!`;

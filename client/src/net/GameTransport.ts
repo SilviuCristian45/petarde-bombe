@@ -5,6 +5,9 @@ import type { Action, GameEvent, GameState } from '@petarde/shared';
 
 export type ClientMessage =
   | { type: 'input'; action: Action }
+  | { type: 'rounds'; rounds: number } // host, lobby: 3/5/7
+  | { type: 'addBot' } // host, lobby, only where botControls
+  | { type: 'removeBot' }
   | { type: 'start' } // host: lobby -> round 1
   | { type: 'lobby' }; // host: finished -> back to the lobby ("Încă un meci")
 
@@ -22,6 +25,8 @@ export interface GameTransport {
   readonly pausable: boolean;
   isPaused(): boolean;
   setPaused(paused: boolean): void;
+  /** Whether the lobby offers +Bot/-Bot (the local game). */
+  readonly botControls: boolean;
   /** Only transports that own the simulation can fast-forward a round that only bots are still playing. */
   readonly skippable: boolean;
   /** Simulates to the end of the current round at once (no-op unless onlyBotsAlive). */

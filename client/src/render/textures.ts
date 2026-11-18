@@ -14,11 +14,19 @@ export const TEX = {
   flame: 'flame',
   spark: 'spark',
   smoke: 'smoke',
+  crown: 'crown',
+  soundOn: 'soundOn',
+  soundOff: 'soundOff',
   powerup: (type: number) => `powerup${type}`,
   player: (slot: number) => `player${slot}`,
 } as const;
 
-export function createTextures(scene: Phaser.Scene): void {
+/** Every scene that draws calls this; the textures are baked once per game. */
+export function ensureTextures(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(TEX.wall)) createTextures(scene);
+}
+
+function createTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({}, false);
   const T = TILE;
   const bake = (key: string, w = T, h = T) => {
@@ -60,6 +68,25 @@ export function createTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xffffff, 0.35).fillCircle(12, 12, 12);
   g.fillStyle(0xffffff, 0.6).fillCircle(12, 12, 8);
   bake(TEX.smoke, 24, 24);
+
+  // Host crown
+  g.fillStyle(0xffd166).fillTriangle(1, 5, 6, 14, 1, 14).fillTriangle(19, 5, 14, 14, 19, 14);
+  g.fillTriangle(10, 1, 4, 14, 16, 14).fillRect(1, 12, 18, 4);
+  g.fillStyle(0xe63946).fillCircle(10, 13, 2);
+  bake(TEX.crown, 20, 16);
+
+  // Mute toggle: speaker with sound waves, or with a cross.
+  const speaker = () => {
+    g.fillStyle(0xeaf2ff).fillRect(4, 11, 6, 10).fillTriangle(8, 11, 16, 4, 16, 28).fillTriangle(8, 21, 16, 4, 16, 28);
+  };
+  speaker();
+  g.lineStyle(2, 0xeaf2ff);
+  g.beginPath().arc(17, 16, 6, -0.9, 0.9).strokePath();
+  g.beginPath().arc(17, 16, 11, -0.9, 0.9).strokePath();
+  bake(TEX.soundOn, 32, 32);
+  speaker();
+  g.lineStyle(3, 0xff6b81).lineBetween(20, 11, 29, 21).lineBetween(29, 11, 20, 21);
+  bake(TEX.soundOff, 32, 32);
 
   const powerupColors: Record<number, number> = {
     [POWERUP_BOMB]: 0x4361ee,
