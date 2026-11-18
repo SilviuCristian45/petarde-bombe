@@ -17,6 +17,8 @@ export const TEX = {
   crown: 'crown',
   soundOn: 'soundOn',
   soundOff: 'soundOff',
+  fullscreenOn: 'fullscreenOn',
+  fullscreenOff: 'fullscreenOff',
   powerup: (type: number) => `powerup${type}`,
   player: (slot: number) => `player${slot}`,
 } as const;
@@ -87,6 +89,27 @@ function createTextures(scene: Phaser.Scene): void {
   speaker();
   g.lineStyle(3, 0xff6b81).lineBetween(20, 11, 29, 21).lineBetween(29, 11, 20, 21);
   bake(TEX.soundOff, 32, 32);
+
+  // Fullscreen: four corner brackets, at the edges (enter) or folded toward the middle (exit).
+  const corners = (vertex: number, armDir: 1 | -1) => {
+    g.lineStyle(3, 0xeaf2ff);
+    const arm = 7;
+    for (const [sx, sy] of [
+      [1, 1],
+      [-1, 1],
+      [1, -1],
+      [-1, -1],
+    ] as const) {
+      // Corner point measured from the icon's matching corner; arms run along the edges.
+      const x = sx > 0 ? vertex : 32 - vertex;
+      const y = sy > 0 ? vertex : 32 - vertex;
+      g.lineBetween(x, y, x + sx * armDir * arm, y).lineBetween(x, y, x, y + sy * armDir * arm);
+    }
+  };
+  corners(6, 1);
+  bake(TEX.fullscreenOn, 32, 32);
+  corners(13, -1);
+  bake(TEX.fullscreenOff, 32, 32);
 
   const powerupColors: Record<number, number> = {
     [POWERUP_BOMB]: 0x4361ee,
