@@ -1,43 +1,42 @@
 import Phaser from 'phaser';
-import {
-  isValidRoomCode,
-  MAX_NAME_LENGTH,
-  normalizeRoomCode,
-  ROOM_CODE_ALPHABET,
-  ROOM_CODE_LENGTH,
-  sanitizeName,
-} from '@petarde/shared';
+import { MAX_PLAYERS, sanitizeName } from '@petarde/shared';
 import type { GameTransport } from '../net/GameTransport';
 import { createOfflineRoom, createRoom, joinRoom, onlineEnabled, resumeRoom, RoomError } from '../net/rooms';
 import { FONT, GAME_W } from '../render/layout';
 import { ensureTextures } from '../render/textures';
-import { load, save } from '../storage';
+import { load } from '../storage';
 import { addTitle, drawBackdrop } from '../ui/backdrop';
+import { CodeInput } from '../ui/CodeInput';
 import { TextButton } from '../ui/TextButton';
 import type { LobbySceneData } from './LobbyScene';
+import type { NameSceneData } from './NameScene';
 
 export interface MenuSceneData {
-  /** Code from a ?room= invite link: the menu only asks for a nickname, then joins. */
+  /** Code from a ?room= invite link: joined right away. */
   invite?: string;
-  /** Shown on arrival, e.g. an invalid invite link. */
+  /** Shown on arrival, e.g. an invalid invite link or a lost connection. */
   message?: string;
   /** The tab was reloaded during an online game: reconnect to that room right away. */
   resume?: boolean;
 }
 
 const CX = GAME_W / 2;
+const CARD_Y = 285;
+const CARD_W = 400;
+const CARD_H = 240;
+const LEFT_X = CX - 215;
+const RIGHT_X = CX + 215;
 const OFFLINE_LABEL = 'Joacă offline cu boți';
-const CODE_HINT = 'Codul are 6 caractere: litere și cifre, fără 0, O, 1, I, L.';
 
-/** Nickname plus "create room" / "join by code". Inputs are DOM elements over the canvas. */
+/** Two obvious choices: create a game, or join a friend's by code. Offline play is secondary. */
 export class MenuScene extends Phaser.Scene {
   private opts!: MenuSceneData;
-  private nameInput!: HTMLInputElement;
-  private codeInput?: HTMLInputElement;
   private status!: Phaser.GameObjects.Text;
-  private buttons: TextButton[] = [];
-  private joinButton?: TextButton;
-  private offlineButton?: TextButton;
+  private codeProblem!: Phaser.GameObjects.Text;
+  private codeInput!: CodeInput;
+  private createCard!: Phaser.GameObjects.Rectangle;
+  private createButton!: TextButton;
+  private offlineButton!: TextButton;
   private busy = false;
 
   constructor() {
@@ -46,114 +45,113 @@ export class MenuScene extends Phaser.Scene {
 
   init(data: MenuSceneData): void {
     this.opts = data;
-    this.buttons = [];
-    this.codeInput = undefined;
-    this.joinButton = undefined;
-    this.offlineButton = undefined;
     this.busy = false;
   }
 
   create(): void {
     ensureTextures(this);
     drawBackdrop(this);
-    addTitle(this, 70, 44);
+    addTitle(this, 50, 40);
+    this.playingAs(100);
 
-    this.label(150, 'Nickname');
-    this.nameInput = this.field(188, 300, MAX_NAME_LENGTH, 'Jucător');
-    this.nameInput.value = load('name') ?? '';
-
-    const invite = this.opts.invite;
-    // Created before the inputs: their handlers write to it (the scene instance is reused between visits).
+    // Created first: everything below may write to it (the scene instance is reused between visits).
     this.status = this.add
-      .text(CX, invite ? 456 : 444, this.opts.message ?? '', { fontFamily: FONT, fontSize: '15px', color: '#ff8fa3', align: 'center' })
+      .text(CX, 432, this.opts.message ?? '', { fontFamily: FONT, fontSize: '15px', color: '#ff8fa3', align: 'center' })
       .setOrigin(0.5);
-    if (invite) {
-      this.label(258, 'Ai fost invitat în room-ul');
-      this.add
-        .text(CX, 298, invite, { fontFamily: FONT, fontSize: '40px', color: '#ffe066', letterSpacing: 6 })
-        .setOrigin(0.5);
-      this.joinButton = this.button(360, `Intră în ${invite}`, () => this.join(invite), 'primary');
-      this.button(412, 'Alt room', () => this.leaveInvite());
-      // Only offered when the server turns out to be unreachable.
-      if (onlineEnabled) this.offlineButton = this.button(500, OFFLINE_LABEL, () => this.onPlayOffline()).setVisible(false);
-      this.onEnter(this.nameInput, () => this.join(invite));
-    } else {
-      this.button(246, 'Creează room', () => this.onCreateRoom(), 'primary');
-      this.label(300, 'sau intră cu un cod');
-      this.codeInput = this.field(336, 180, ROOM_CODE_LENGTH, 'COD');
-      this.codeInput.classList.add('code');
-      this.codeInput.addEventListener('input', () => this.onCodeInput());
-      this.joinButton = this.button(390, 'Intră cu cod', () => this.join(this.codeInput!.value));
-      if (onlineEnabled) this.offlineButton = this.button(496, OFFLINE_LABEL, () => this.onPlayOffline());
-      this.onEnter(this.nameInput, () => this.onCreateRoom());
-      this.onEnter(this.codeInput, () => this.join(this.codeInput!.value));
-      this.onCodeInput();
-    }
 
-    this.nameInput.focus();
-    if (this.opts.resume) void this.connect(resumeRoom(), 'Se reconectează la room...');
+    this.createCreateCard();
+    this.createJoinCard();
+    this.offlineButton = new TextButton(this, CX, 482, OFFLINE_LABEL, () => this.onPlayOffline(), 'secondary', 14).setVisible(
+      onlineEnabled,
+    );
+
+    if (this.opts.resume) void this.connect(resumeRoom(), 'Se reconectează la joc...');
+    else if (this.opts.invite) this.joinInvite(this.opts.invite);
+    else this.codeInput.focus();
   }
 
-  private label(y: number, text: string): void {
-    this.add.text(CX, y, text, { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' }).setOrigin(0.5);
-  }
-
-  private field(y: number, width: number, maxLength: number, placeholder: string): HTMLInputElement {
-    const el = this.add.dom(CX, y, 'input').setOrigin(0.5);
-    const input = el.node as HTMLInputElement;
-    input.className = 'field';
-    input.style.width = `${width}px`;
-    input.maxLength = maxLength;
-    input.placeholder = placeholder;
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    return input;
-  }
-
-  private button(y: number, label: string, onClick: () => void, variant: 'primary' | 'secondary' = 'secondary'): TextButton {
-    const b = new TextButton(this, CX, y, label, onClick, variant);
-    this.buttons.push(b);
-    return b;
-  }
-
-  private onEnter(input: HTMLInputElement, action: () => void): void {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') action();
+  /** "Joci ca {nume} · schimbă" */
+  private playingAs(y: number): void {
+    const name = this.add
+      .text(CX - 4, y, `Joci ca ${this.playerName()}`, { fontFamily: FONT, fontSize: '15px', color: '#9aa6c8' })
+      .setOrigin(1, 0.5);
+    const change = this.add
+      .text(CX + 4, y, '· schimbă', { fontFamily: FONT, fontSize: '15px', color: '#ffe066' })
+      .setOrigin(0, 0.5)
+      .setInteractive({ useHandCursor: true });
+    change.on('pointerover', () => change.setColor('#fff1a8'));
+    change.on('pointerout', () => change.setColor('#ffe066'));
+    change.on('pointerdown', () => {
+      if (this.busy) return;
+      const data: NameSceneData = { edit: true };
+      this.scene.start('name', data);
     });
+    // keep the pair centered as a whole
+    const shift = (name.width - change.width) / 2;
+    name.x += shift;
+    change.x += shift;
   }
 
-  /** Upper-cases as you type and flags characters outside the room code alphabet. */
-  private onCodeInput(): void {
-    const input = this.codeInput!;
-    const code = normalizeRoomCode(input.value);
-    if (code !== input.value) input.value = code;
-    const bad = [...code].some((ch) => !ROOM_CODE_ALPHABET.includes(ch));
-    input.classList.toggle('invalid', bad);
-    if (bad || this.status.text === CODE_HINT) this.status.setColor('#ff8fa3').setText(bad ? CODE_HINT : '');
-    this.joinButton!.setEnabled(!this.busy && isValidRoomCode(code));
+  private card(x: number): Phaser.GameObjects.Rectangle {
+    return this.add.rectangle(x, CARD_Y, CARD_W, CARD_H, 0x13203d, 0.92).setStrokeStyle(2, 0x31497a);
+  }
+
+  private createCreateCard(): void {
+    this.createCard = this.card(LEFT_X).setInteractive({ useHandCursor: true });
+    this.createCard.on('pointerover', () => !this.busy && this.createCard.setStrokeStyle(2, 0xffe066));
+    this.createCard.on('pointerout', () => this.createCard.setStrokeStyle(2, 0x31497a));
+    this.createCard.on('pointerdown', () => this.onCreateRoom());
+    this.add.text(LEFT_X, CARD_Y - 75, 'Creează joc', { fontFamily: FONT, fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+    this.add
+      .text(LEFT_X, CARD_Y - 35, `Invită până la ${MAX_PLAYERS - 1} prieteni`, { fontFamily: FONT, fontSize: '16px', color: '#9aa6c8' })
+      .setOrigin(0.5);
+    this.createButton = new TextButton(this, LEFT_X, CARD_Y + 45, 'Creează', () => this.onCreateRoom(), 'primary', 24);
+  }
+
+  private createJoinCard(): void {
+    this.card(RIGHT_X);
+    this.add.text(RIGHT_X, CARD_Y - 75, 'Intră la un prieten', { fontFamily: FONT, fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+    this.add
+      .text(RIGHT_X, CARD_Y - 35, 'Scrie codul de 6 caractere primit', { fontFamily: FONT, fontSize: '16px', color: '#9aa6c8' })
+      .setOrigin(0.5);
+    this.codeInput = new CodeInput(this, RIGHT_X, CARD_Y + 25, {
+      onComplete: (code) => this.join(code),
+      onProblem: (message) => this.codeProblem.setText(message),
+    });
+    this.codeProblem = this.add
+      .text(RIGHT_X, CARD_Y + 85, '', {
+        fontFamily: FONT,
+        fontSize: '13px',
+        color: '#ff8fa3',
+        align: 'center',
+        wordWrap: { width: CARD_W - 30 },
+      })
+      .setOrigin(0.5, 0);
   }
 
   private playerName(): string {
-    const raw = this.nameInput.value.trim();
-    if (raw) save('name', raw);
-    return sanitizeName(raw);
+    return sanitizeName(load('name') ?? '');
   }
 
   private onCreateRoom(): void {
-    void this.connect(createRoom(this.playerName()), 'Se creează room-ul...');
+    void this.connect(createRoom(this.playerName()), 'Se creează jocul...');
   }
 
   private onPlayOffline(): void {
     void this.connect(createOfflineRoom(this.playerName()), 'Se pregătește jocul offline...');
   }
 
-  private join(input: string): void {
-    const code = normalizeRoomCode(input);
-    if (!isValidRoomCode(code)) {
-      this.status.setText(CODE_HINT);
-      return;
-    }
+  private join(code: string): void {
     void this.connect(joinRoom(code, this.playerName()), `Intri în ${code}...`);
+  }
+
+  private joinInvite(code: string): void {
+    this.codeInput.setCode(code);
+    // Whatever happens, a later reload of this page should not retry the invite.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    window.history.replaceState(null, '', url);
+    this.join(code);
   }
 
   private async connect(pending: Promise<GameTransport>, message: string): Promise<void> {
@@ -167,28 +165,21 @@ export class MenuScene extends Phaser.Scene {
       this.scene.start('lobby', data);
     } catch (err) {
       this.setBusy(false);
-      this.status.setColor('#ff8fa3').setText(err instanceof Error ? err.message : 'Nu s-a putut intra în room.');
-      // The server is down or full: put "Joacă offline cu boți" right under the message.
+      this.status.setColor('#ff8fa3').setText(err instanceof Error ? err.message : 'Nu s-a putut intra în joc.');
+      // The server is down or full: highlight "Joacă offline cu boți" right under the message.
       if (err instanceof RoomError && err.offline) this.offerOffline(true);
+      this.codeInput.focus();
     }
-  }
-
-  private offerOffline(offer: boolean): void {
-    if (!this.offlineButton) return;
-    this.offlineButton.setVariant(offer ? 'primary' : 'secondary');
-    if (this.opts.invite) this.offlineButton.setVisible(offer);
   }
 
   private setBusy(busy: boolean): void {
     this.busy = busy;
-    for (const b of this.buttons) b.setEnabled(!busy);
-    if (this.codeInput && !busy) this.onCodeInput();
+    this.createButton.setEnabled(!busy);
+    this.offlineButton.setEnabled(!busy);
+    this.codeInput.setDisabled(busy);
   }
 
-  private leaveInvite(): void {
-    const url = new URL(window.location.href);
-    url.searchParams.delete('room');
-    window.history.replaceState(null, '', url);
-    this.scene.restart({});
+  private offerOffline(offer: boolean): void {
+    this.offlineButton.setVariant(offer ? 'primary' : 'secondary');
   }
 }

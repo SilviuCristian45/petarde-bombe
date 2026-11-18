@@ -6,7 +6,7 @@ import { addTitle, drawBackdrop } from '../ui/backdrop';
 import { TextButton } from '../ui/TextButton';
 import type { MenuSceneData } from './MenuScene';
 
-/** Title screen. The "Intră" click is the user gesture browsers require before audio can play. */
+/** Title screen. The "Intră" click is the user gesture browsers require before audio can play. Next: the nickname. */
 export class IntroScene extends Phaser.Scene {
   private next!: MenuSceneData;
 
@@ -32,6 +32,6 @@ export class IntroScene extends Phaser.Scene {
 
   private enter(): void {
     void playOptional(this.game, 'intro', ['audio/intro.ogg', 'audio/intro.mp3']);
-    this.scene.start('menu', this.next);
+    this.scene.start('name', this.next);
   }
 }

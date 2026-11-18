@@ -8,6 +8,7 @@ import { GameScene, type GameSceneData } from './scenes/GameScene';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { MenuScene, type MenuSceneData } from './scenes/MenuScene';
+import { NameScene } from './scenes/NameScene';
 import { UiScene } from './scenes/UiScene';
 
 const params = new URLSearchParams(window.location.search);
@@ -35,7 +36,7 @@ function quickStart(): GameSceneData {
 // A reload during an online game skips the intro and reconnects to the same room.
 const resume = !quick && hasResumableRoom();
 
-// ?room=COD (invite link): after the intro, the menu only asks for a nickname and joins.
+// ?room=COD (invite link): after the intro and the nickname, the menu joins that room.
 function menuData(): MenuSceneData {
   const room = params.get('room');
   if (room === null) return {};
@@ -55,6 +56,7 @@ const game = new Phaser.Game({
 });
 initMute(game);
 game.scene.add('intro', IntroScene, !quick && !resume, menuData());
+game.scene.add('name', NameScene);
 game.scene.add('menu', MenuScene, resume, { ...menuData(), resume: true } satisfies MenuSceneData);
 game.scene.add('lobby', LobbyScene);
 game.scene.add('game', GameScene, quick, quick ? quickStart() : undefined);

@@ -74,11 +74,11 @@ export function hasResumableRoom(): boolean {
 export async function resumeRoom(): Promise<GameTransport> {
   const token = loadToken();
   saveToken(null);
-  if (!onlineEnabled || !token) throw new RoomError('Nu există un room de reluat.');
+  if (!onlineEnabled || !token) throw new RoomError('Nu există un joc de reluat.');
   try {
     return await connected(getClient().reconnect(token));
   } catch {
-    throw new RoomError('Nu te-ai mai putut reconecta la room.');
+    throw new RoomError('Nu te-ai mai putut reconecta la joc.');
   }
 }
 
@@ -122,14 +122,14 @@ async function explain(err: unknown, code?: string): Promise<RoomError> {
   const errorCode = typeof err === 'object' && err !== null && 'code' in err ? Number(err.code) : NaN;
   const message = err instanceof Error ? err.message : '';
   if (errorCode === ERR_SERVER_FULL) return new RoomError('Serverul e plin. Încearcă puțin mai târziu.', true);
-  if (errorCode === ERR_ROOM_FULL) return new RoomError('Room-ul e plin (maxim 6 jucători).');
+  if (errorCode === ERR_ROOM_FULL) return new RoomError('Jocul e plin (maxim 6 jucători).');
   if (errorCode === ERR_IN_PROGRESS) return new RoomError('Meciul e deja în desfășurare. Încearcă după ce se termină.');
   if (code && /not found|disposed|locked/.test(message)) {
     // Colyseus reports a full room and a running match the same way ("locked"); ask the server which.
     const status = await fetchStatus(code);
-    if (status === 'full') return new RoomError('Room-ul e plin (maxim 6 jucători).');
+    if (status === 'full') return new RoomError('Jocul e plin (maxim 6 jucători).');
     if (status === 'playing') return new RoomError('Meciul e deja în desfășurare. Încearcă după ce se termină.');
-    if (status === 'missing') return new RoomError(`Nu există niciun room cu codul ${code}.`);
+    if (status === 'missing') return new RoomError(`Nu există niciun joc cu codul ${code}.`);
   }
   return new RoomError('Serverul nu e disponibil acum.', true);
 }
