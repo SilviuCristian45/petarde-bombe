@@ -21,6 +21,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Reachable from a phone on the same Wi-Fi (http://<this PC's LAN address>:5173).
+    host: true,
     // Same path as in production (Caddy handle_path): the prefix is stripped before the server.
     proxy: {
       '/colyseus': {
