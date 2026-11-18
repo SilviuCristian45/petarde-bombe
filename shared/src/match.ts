@@ -187,6 +187,12 @@ export function startRound(state: GameState): void {
   }
 }
 
+/** Mid-round with no human left alive but bots still fighting; the round can be fast-forwarded. */
+export function onlyBotsAlive(state: GameState): boolean {
+  const alive = Object.values(state.players).filter((p) => p.alive);
+  return state.phase === 'playing' && alive.length > 0 && alive.every((p) => p.isBot);
+}
+
 /** Player ids ranked by points, then wins, kills, fewest deaths, slot. */
 export function computeStandings(state: GameState): string[] {
   return Object.values(state.players)

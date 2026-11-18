@@ -6,10 +6,12 @@ import {
   botDecide,
   createGameState,
   generateRoomCode,
+  onlyBotsAlive,
   sortedPlayers,
   startMatch,
   step,
   TICK_MS,
+  TICK_RATE,
   type GameEvent,
   type GameState,
   type PlayerInput,
@@ -24,11 +26,13 @@ export interface LocalOptions {
 }
 
 const MAX_FRAME_MS = 250; // after a stall, catch up at most this much
+const MAX_SKIP_TICKS = 10 * 60 * TICK_RATE; // the shrinking arena ends every round well before this
 
 /** Runs the shared simulation in the browser, with bots filling the room. */
 export class LocalTransport implements GameTransport {
   readonly playerId = 'local';
   readonly pausable = true;
+  readonly skippable = true;
   private readonly state: GameState;
   private readonly pending: PlayerInput[] = [];
   private readonly listeners = new Set<(events: GameEvent[]) => void>();
@@ -76,17 +80,36 @@ export class LocalTransport implements GameTransport {
     this.acc = 0;
   }
 
+  skipRound(): void {
+    if (!onlyBotsAlive(this.state)) return;
+    this.pending.length = 0;
+    // Effects of the skipped part (explosions, deaths) would all fire at once, so only the outcome is reported.
+    const outcome: GameEvent[] = [];
+    for (let i = 0; i < MAX_SKIP_TICKS && this.state.phase === 'playing'; i++) {
+      for (const e of this.simulate()) if (e.type === 'roundEnd' || e.type === 'matchEnd') outcome.push(e);
+    }
+    this.acc = 0;
+    this.emit(outcome);
+  }
+
   dispose(): void {
     this.listeners.clear();
   }
 
   private tick(): void {
+    this.emit(this.simulate());
+  }
+
+  private simulate(): GameEvent[] {
     for (const input of this.pending) applyInput(this.state, input);
     this.pending.length = 0;
     for (const p of sortedPlayers(this.state)) {
       if (p.isBot && p.alive) applyInput(this.state, { playerId: p.id, action: botDecide(this.state, p.id) });
     }
-    const events = step(this.state);
+    return step(this.state);
+  }
+
+  private emit(events: GameEvent[]): void {
     if (events.length > 0) for (const cb of this.listeners) cb(events);
   }
 }

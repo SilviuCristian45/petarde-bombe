@@ -12,6 +12,8 @@ export const TEX = {
   brick: 'brick',
   bomb: 'bomb',
   flame: 'flame',
+  spark: 'spark',
+  smoke: 'smoke',
   powerup: (type: number) => `powerup${type}`,
   player: (slot: number) => `player${slot}`,
 } as const;
@@ -51,6 +53,13 @@ export function createTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xffc300).fillRect(5, 5, T - 10, T - 10);
   g.fillStyle(0xfff3b0).fillRect(12, 12, T - 24, T - 24);
   bake(TEX.flame);
+
+  // White so particles can be tinted in the player's color.
+  g.fillStyle(0xffffff).fillCircle(4, 4, 4);
+  bake(TEX.spark, 8, 8);
+  g.fillStyle(0xffffff, 0.35).fillCircle(12, 12, 12);
+  g.fillStyle(0xffffff, 0.6).fillCircle(12, 12, 8);
+  bake(TEX.smoke, 24, 24);
 
   const powerupColors: Record<number, number> = {
     [POWERUP_BOMB]: 0x4361ee,

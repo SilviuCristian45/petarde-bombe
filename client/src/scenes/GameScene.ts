@@ -3,6 +3,7 @@ import {
   CELL_BRICK,
   CELL_WALL,
   computeStandings,
+  onlyBotsAlive,
   PLAYER_COLORS,
   SHRINK_START_TICKS,
   sortedPlayers,
@@ -44,11 +45,21 @@ interface PlayerView {
 
 interface HudRow {
   swatch: Phaser.GameObjects.Rectangle;
-  text: Phaser.GameObjects.Text;
+  name: Phaser.GameObjects.Text;
+  stats: Phaser.GameObjects.Text;
+  strike: Phaser.GameObjects.Rectangle;
 }
 
-const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, label: 7, overlay: 10 } as const;
+interface LocalDeath {
+  killerId: string;
+  suicide: boolean;
+  tick: number;
+}
+
+const DEPTH = { floor: 0, powerup: 1, cell: 2, bomb: 3, flame: 4, player: 5, effect: 6, label: 7, overlay: 10 } as const;
 const ROUND_BANNER_TICKS = TICK_RATE; // "Runda N!" shown for 1 s
+const DEATH_BANNER_TICKS = Math.round(2.5 * TICK_RATE); // "Ai murit!", then spectator mode
+const DEATH_EFFECT_MS = 1400;
 
 /** Renders the shared GameState and forwards local input; knows nothing about where the state comes from. */
 export class GameScene extends Phaser.Scene {
@@ -75,6 +86,12 @@ export class GameScene extends Phaser.Scene {
   private hudRows: HudRow[] = [];
   private overlayBg!: Phaser.GameObjects.Rectangle;
   private overlayText!: Phaser.GameObjects.Text;
+  private deathBg!: Phaser.GameObjects.Rectangle;
+  private deathTitle!: Phaser.GameObjects.Text;
+  private deathCause!: Phaser.GameObjects.Text;
+  private spectatorText!: Phaser.GameObjects.Text;
+  private skipButton!: Phaser.GameObjects.Text;
+  private localDeath?: LocalDeath;
 
   constructor() {
     super('game');
@@ -116,12 +133,16 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(DEPTH.overlay);
+    this.createDeathOverlay();
 
     this.controls = new KeyboardInput(this.input.keyboard!);
     this.input.keyboard!.on('keydown-P', () => {
       if (this.transport.pausable) this.transport.setPaused(!this.transport.isPaused());
     });
-    this.input.keyboard!.on('keydown-ENTER', () => this.restartMatch());
+    this.input.keyboard!.on('keydown-ENTER', () => {
+      if (this.canSkipRound()) this.transport.skipRound();
+      else this.restartMatch();
+    });
     this.unsubscribe = this.transport.onEvents((events) => this.handleEvents(events));
 
     if (this.debugEnabled) this.debug = new DebugOverlay(this);
@@ -154,7 +175,8 @@ export class GameScene extends Phaser.Scene {
     this.syncFlames(state);
     this.syncPlayers(state, alpha);
     this.syncHud(state);
-    this.syncOverlay(state);
+    const overlayShown = this.syncOverlay(state);
+    this.syncDeathOverlay(state, overlayShown);
     this.debug?.update(state, this.game.loop.actualFps, this.transport.isPaused(), (id) => {
       const view = this.playerViews.get(id);
       return view?.body.visible ? { x: view.body.x, y: view.body.y } : undefined;
@@ -164,8 +186,60 @@ export class GameScene extends Phaser.Scene {
   private handleEvents(events: GameEvent[]): void {
     for (const e of events) {
       if (e.type === 'explosion') this.cameras.main.shake(120, 0.004);
+      else if (e.type === 'death') this.onDeath(e);
       else if (e.type === 'roundStart') this.controls.reset();
     }
+  }
+
+  private onDeath(e: Extract<GameEvent, { type: 'death' }>): void {
+    const state = this.transport.getState();
+    const p = state.players[e.playerId];
+    const view = this.playerViews.get(e.playerId);
+    // Events arrive before syncPlayers hides the body, so it still sits where the player died.
+    if (p && view?.body.visible) this.playDeathEffect(view.body.x, view.body.y, PLAYER_COLORS[p.slot]!);
+    if (e.playerId === this.transport.playerId) {
+      this.localDeath = { killerId: e.killerId, suicide: e.suicide, tick: state.tick };
+      this.cameras.main.shake(300, 0.012);
+    }
+  }
+
+  /** Firework burst and a puff of smoke in the player's color. */
+  private playDeathEffect(x: number, y: number, color: number): void {
+    const sparks = this.add
+      .particles(x, y, TEX.spark, {
+        speed: { min: 80, max: 240 },
+        lifespan: { min: 500, max: 1000 },
+        scale: { start: 1.2, end: 0 },
+        gravityY: 220,
+        tint: [color, color, 0xffffff, 0xffe066],
+        blendMode: Phaser.BlendModes.ADD,
+        emitting: false,
+      })
+      .setDepth(DEPTH.effect);
+    sparks.explode(48);
+    const smoke = this.add
+      .particles(x, y, TEX.smoke, {
+        speed: { min: 8, max: 36 },
+        angle: { min: 230, max: 310 },
+        lifespan: { min: 900, max: DEATH_EFFECT_MS },
+        scale: { start: 0.6, end: 1.8 },
+        alpha: { start: 0.7, end: 0 },
+        tint: [mixColor(color, 0x555566, 0.5), 0x555566],
+        emitting: false,
+      })
+      .setDepth(DEPTH.effect - 0.5);
+    smoke.explode(12);
+    const ring = this.add.circle(x, y, TILE / 2).setStrokeStyle(3, color).setDepth(DEPTH.effect);
+    this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 450, ease: 'Cubic.easeOut' });
+    this.time.delayedCall(DEATH_EFFECT_MS, () => {
+      sparks.destroy();
+      smoke.destroy();
+      ring.destroy();
+    });
+  }
+
+  private canSkipRound(): boolean {
+    return this.transport.skippable && onlyBotsAlive(this.transport.getState());
   }
 
   private restartMatch(): void {
@@ -282,14 +356,11 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < PLAYER_COLORS.length; i++) {
       const y = BOARD_Y + 160 + i * 40;
       const swatch = this.add.rectangle(HUD_X + 7, y + 9, 14, 14, 0xffffff).setVisible(false);
-      const text = this.add.text(HUD_X + 20, y, '', {
-        fontFamily: FONT,
-        fontSize: '13px',
-        color: '#ffffff',
-        lineSpacing: 2,
-        fixedWidth: HUD_W - 20,
-      });
-      this.hudRows.push({ swatch, text });
+      const style = { fontFamily: FONT, fontSize: '13px', color: '#ffffff' };
+      const name = this.add.text(HUD_X + 20, y, '', style);
+      const stats = this.add.text(HUD_X + 20, y + 17, '', { ...style, fixedWidth: HUD_W - 20 });
+      const strike = this.add.rectangle(HUD_X + 18, y + 9, 1, 2, 0xff6b81).setOrigin(0, 0.5).setVisible(false);
+      this.hudRows.push({ swatch, name, stats, strike });
     }
     const help = ['Săgeți/WASD: mers', 'Spațiu: petardă'];
     if (this.transport.pausable) help.push('P: pauză');
@@ -310,21 +381,26 @@ export class GameScene extends Phaser.Scene {
     this.hudInfo.setText([`Cod: ${state.code}`, `Runda ${Math.max(1, state.round)}/${state.roundsTotal}`, timer].join('\n'));
 
     const players = sortedPlayers(state);
+    // Dead players stay crossed out until the next round starts.
+    const inRound = state.phase === 'playing' || state.phase === 'intermission';
     this.hudRows.forEach((row, i) => {
       const p = players[i];
       row.swatch.setVisible(!!p);
-      row.text.setVisible(!!p);
+      row.name.setVisible(!!p);
+      row.stats.setVisible(!!p);
+      const dead = !!p && inRound && !p.alive;
+      row.strike.setVisible(dead);
       if (!p) return;
-      const dim = state.phase === 'playing' && !p.alive;
-      row.swatch.setFillStyle(PLAYER_COLORS[p.slot]!).setAlpha(dim ? 0.3 : 1);
+      row.swatch.setFillStyle(PLAYER_COLORS[p.slot]!).setAlpha(dead ? 0.3 : 1);
       const name = p.id === this.transport.playerId ? `${p.name} (tu)` : p.name;
-      row.text
-        .setText(`${name}\n${p.points} p  ${p.kills}k ${p.wins}w`)
-        .setColor(dim ? '#5c6680' : '#ffffff');
+      row.name.setText(name).setColor(dead ? '#5c6680' : '#ffffff');
+      row.stats.setText(`${p.points} p  ${p.kills}k ${p.wins}w`).setColor(dead ? '#5c6680' : '#ffffff');
+      if (dead) row.strike.setSize(Math.min(row.name.width, HUD_W - 20) + 4, 2);
     });
   }
 
-  private syncOverlay(state: Readonly<GameState>): void {
+  /** Draws the main banner (pause, round results...). Returns whether it is showing. */
+  private syncOverlay(state: Readonly<GameState>): boolean {
     let text = '';
     if (this.transport.isPaused()) {
       text = 'PAUZĂ\n\nP pentru a continua';
@@ -345,7 +421,84 @@ export class GameScene extends Phaser.Scene {
     this.overlayText.setText(text);
     this.overlayBg.setVisible(text !== '');
     if (text) this.overlayBg.setSize(BOARD_W * 0.6, this.overlayText.height + 40).setOrigin(0.5);
+    return text !== '';
   }
+
+  private createDeathOverlay(): void {
+    const cx = BOARD_X + BOARD_W / 2;
+    const cy = BOARD_Y + BOARD_H / 2;
+    this.deathBg = this.add
+      .rectangle(cx, cy, BOARD_W * 0.6, 150, 0x1a0710, 0.85)
+      .setStrokeStyle(3, 0xff4d6d)
+      .setDepth(DEPTH.overlay)
+      .setVisible(false);
+    this.deathTitle = this.add
+      .text(cx, cy - 22, 'Ai murit!', { fontFamily: FONT, fontSize: '48px', color: '#ff4d6d', stroke: '#000000', strokeThickness: 6 })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.overlay)
+      .setVisible(false);
+    this.deathCause = this.add
+      .text(cx, cy + 34, '', { fontFamily: FONT, fontSize: '20px', color: '#ffe066' })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.overlay)
+      .setVisible(false);
+    this.spectatorText = this.add
+      .text(cx, BOARD_Y + 8, '', {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#d0d8f0',
+        backgroundColor: '#0b1026cc',
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH.overlay)
+      .setVisible(false);
+    this.skipButton = this.add
+      .text(cx, BOARD_Y + 40, 'Enter: sari peste rundă', {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#0b1026',
+        backgroundColor: '#ffe066',
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH.overlay)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        if (this.canSkipRound()) this.transport.skipRound();
+      });
+  }
+
+  /** "Ai murit!" with the cause for a moment, then a spectator banner until the round ends. */
+  private syncDeathOverlay(state: Readonly<GameState>, overlayShown: boolean): void {
+    const me = state.players[this.transport.playerId];
+    if (!me || me.alive || state.phase !== 'playing') this.localDeath = undefined;
+    const death = this.localDeath;
+    const big = !!death && !overlayShown && state.tick - death.tick < DEATH_BANNER_TICKS;
+    this.deathBg.setVisible(big);
+    this.deathTitle.setVisible(big);
+    this.deathCause.setVisible(big);
+    if (death && big) this.deathCause.setText(deathCause(state, death));
+
+    const spectating = !!death && !big;
+    this.spectatorText.setVisible(spectating);
+    if (spectating) this.spectatorText.setText(`Mod spectator · ${deathCause(state, death)}`);
+    this.skipButton.setVisible(spectating && this.canSkipRound());
+  }
+}
+
+function deathCause(state: Readonly<GameState>, death: LocalDeath): string {
+  if (death.suicide) return 'de propria petardă';
+  if (!death.killerId) return 'strivit de arenă';
+  const killer = state.players[death.killerId];
+  return killer ? `de ${killer.name}` : 'de o petardă rătăcită';
+}
+
+/** Linear blend of two 0xRRGGBB colors. */
+function mixColor(a: number, b: number, t: number): number {
+  const ch = (shift: number) => Math.round(((a >> shift) & 0xff) * (1 - t) + ((b >> shift) & 0xff) * t) << shift;
+  return ch(16) | ch(8) | ch(0);
 }
 
 function prune<K>(views: Map<K, Phaser.GameObjects.GameObject>, seen: Set<K>): void {

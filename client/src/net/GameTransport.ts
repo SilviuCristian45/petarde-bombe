@@ -22,5 +22,9 @@ export interface GameTransport {
   readonly pausable: boolean;
   isPaused(): boolean;
   setPaused(paused: boolean): void;
+  /** Only transports that own the simulation can fast-forward a round that only bots are still playing. */
+  readonly skippable: boolean;
+  /** Simulates to the end of the current round at once (no-op unless onlyBotsAlive). */
+  skipRound(): void;
   dispose(): void;
 }
