@@ -233,6 +233,15 @@ describe('BombeRoom', () => {
     expect(Object.keys(game(room).players)).toHaveLength(2);
   });
 
+  it('mirrors the match statistics used by the end-of-match awards', async () => {
+    const { client, room } = await create();
+    await join(client.roomId);
+    await send(client, room, 'start');
+    Object.assign(game(room).players[client.sessionId]!, { suicides: 2, bricks: 7, pickups: 3 });
+    await room.waitForNextPatch();
+    expect(room.state.players.get(client.sessionId)).toMatchObject({ suicides: 2, bricks: 7, pickups: 3 });
+  });
+
   it('keeps a dropped player for reconnection', async () => {
     const { client, room } = await create();
     const guest = await join(client.roomId);

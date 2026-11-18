@@ -53,9 +53,12 @@ export const BOMB_FUSE_TICKS = 50; // 2.5 s
 export const FLAME_TICKS = 10; // 0.5 s
 
 // Round flow
+/** "3, 2, 1, FOC!" at the start of every round: nobody moves or drops bombs until FOC. */
+export const COUNTDOWN_TICKS = 3 * TICK_RATE;
 export const ROUND_END_DELAY_TICKS = 20; // 1 s after the last decisive death
 export const INTERMISSION_TICKS = 100; // 5 s between rounds
-export const SHRINK_START_TICKS = 120 * TICK_RATE; // 2 minutes
+/** Two minutes of fighting after the countdown. */
+export const SHRINK_START_TICKS = COUNTDOWN_TICKS + 120 * TICK_RATE;
 export const SHRINK_INTERVAL_TICKS = 10; // one cell every 0.5 s
 export const ROUND_OPTIONS: readonly number[] = [3, 5, 7];
 export const DEFAULT_ROUNDS = 3;

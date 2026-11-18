@@ -10,5 +10,6 @@ export * from './match';
 export * from './sim';
 export * from './bot';
 export * from './runner';
+export * from './awards';
 export * from './roomCode';
 export * from './protocol';

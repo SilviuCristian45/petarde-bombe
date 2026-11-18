@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOMB_FUSE_TICKS, POINTS_SUICIDE } from '../src/constants';
+import { BOMB_FUSE_TICKS, COUNTDOWN_TICKS, POINTS_SUICIDE } from '../src/constants';
 import { cellCenter, cellOf } from '../src/grid';
 import { addBot, addPlayer, createGameState, onlyBotsAlive, startMatch } from '../src/match';
 import { applyInput } from '../src/sim';
@@ -14,6 +14,7 @@ describe('human player death', () => {
     addBot(s, 'local', 'bot1');
     addBot(s, 'local', 'bot2');
     expect(startMatch(s, 'local')).toBe(true);
+    run(s, COUNTDOWN_TICKS);
     const me = s.players.local!;
     expect(me.isBot).toBe(false);
     const [sx, sy] = [cellOf(me.x), cellOf(me.y)];

@@ -218,6 +218,9 @@ function pick(p: Omit<PlayerState, 'bombPressed'>): Omit<PlayerState, 'bombPress
     kills: p.kills,
     deaths: p.deaths,
     points: p.points,
+    suicides: p.suicides,
+    bricks: p.bricks,
+    pickups: p.pickups,
   };
 }
 

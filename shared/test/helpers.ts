@@ -1,4 +1,4 @@
-import { BOMB_FUSE_TICKS, CELL_BRICK, CELL_EMPTY, CELL_WALL } from '../src/constants';
+import { BOMB_FUSE_TICKS, CELL_BRICK, CELL_EMPTY, CELL_WALL, COUNTDOWN_TICKS } from '../src/constants';
 import { cellCenter } from '../src/grid';
 import { addPlayer, createGameState } from '../src/match';
 import { step } from '../src/sim';
@@ -7,6 +7,7 @@ import type { GameEvent, GameState } from '../src/types';
 /**
  * Builds a playing state from ASCII: '#' wall, '+' brick, '.' empty,
  * '1'..'6' a player (id "p1".."p6", slot digit-1) standing at that cell center.
+ * The round's countdown is already over, so players can move right away.
  */
 export function makeState(rows: string[]): GameState {
   const height = rows.length;
@@ -31,6 +32,7 @@ export function makeState(rows: string[]): GameState {
   }
   state.phase = 'playing';
   state.round = 1;
+  state.roundTick = COUNTDOWN_TICKS;
   return state;
 }
 

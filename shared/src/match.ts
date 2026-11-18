@@ -92,6 +92,9 @@ export function addPlayer(state: GameState, id: string, name: string, isBot = fa
     kills: 0,
     deaths: 0,
     points: 0,
+    suicides: 0,
+    bricks: 0,
+    pickups: 0,
   };
   state.players[id] = player;
   if (!state.hostId && !isBot) state.hostId = id;
@@ -183,6 +186,9 @@ export function startMatch(state: GameState, byId: string): boolean {
     p.kills = 0;
     p.deaths = 0;
     p.points = 0;
+    p.suicides = 0;
+    p.bricks = 0;
+    p.pickups = 0;
   }
   state.round = 1;
   prepareRound(state);

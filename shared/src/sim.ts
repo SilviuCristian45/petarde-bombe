@@ -1,6 +1,8 @@
 import {
   BOMB_FUSE_TICKS,
   CELL_BRICK,
+  COUNTDOWN_TICKS,
+  TICK_RATE,
   CELL_EMPTY,
   CELL_WALL,
   DIR_DOWN,
@@ -38,6 +40,11 @@ const ACTION_DIRS: Partial<Record<Action, number>> = {
   stop: DIR_NONE,
 };
 
+/** 3, 2, 1 while the round's countdown runs, then 0 ("FOC!"). */
+export function countdownSeconds(roundTick: number): number {
+  return Math.max(0, Math.ceil((COUNTDOWN_TICKS - roundTick) / TICK_RATE));
+}
+
 /**
  * Records a player's intent. Direction is held until changed; a bomb press is latched
  * and consumed on the next tick, so it survives a direction change in the same tick.
@@ -72,9 +79,15 @@ export function step(state: GameState): GameEvent[] {
 
   state.roundTick++;
   const players = sortedPlayers(state);
+  // During the countdown a held direction is kept for FOC, but nobody moves and bomb presses are dropped.
+  const frozen = state.roundTick <= COUNTDOWN_TICKS;
 
   for (const p of players) {
     if (!p.alive) continue;
+    if (frozen) {
+      p.bombPressed = false;
+      continue;
+    }
     if (p.bombPressed) {
       p.bombPressed = false;
       placeBomb(state, p, events);
@@ -169,6 +182,7 @@ function pickUp(state: GameState, p: PlayerState, events: GameEvent[]): void {
   if (type === POWERUP_BOMB) p.maxBombs = Math.min(MAX_BOMBS, p.maxBombs + 1);
   else if (type === POWERUP_RANGE) p.range = Math.min(MAX_RANGE, p.range + 1);
   else if (type === POWERUP_SPEED) p.speed = Math.min(MAX_SPEED, p.speed + SPEED_STEP);
+  p.pickups++;
   events.push({ type: 'pickup', playerId: p.id, powerup: type });
 }
 
@@ -199,7 +213,8 @@ export function explodeBombs(state: GameState, events: GameEvent[]): void {
   if (queue.length === 0) return;
 
   const freshCells = new Set<number>();
-  const bricks = new Set<number>();
+  // Brick cell -> the player credited for breaking it (the first blast to reach it).
+  const bricks = new Map<number, string>();
   for (let q = 0; q < queue.length; q++) {
     const { bomb, attacker } = queue[q]!;
     const cells = blastCells(state, bomb.x, bomb.y, bomb.range);
@@ -208,7 +223,7 @@ export function explodeBombs(state: GameState, events: GameEvent[]): void {
       const y = (i - x) / state.width;
       freshCells.add(i);
       flameAt.set(i, { x, y, ttl: FLAME_TICKS, owner: attacker });
-      if (state.grid[i] === CELL_BRICK) bricks.add(i);
+      if (state.grid[i] === CELL_BRICK && !bricks.has(i)) bricks.set(i, attacker);
       const other = bombAt(state, x, y);
       if (other && !exploded.has(other.id)) {
         exploded.add(other.id);
@@ -222,10 +237,12 @@ export function explodeBombs(state: GameState, events: GameEvent[]): void {
   state.flames = [...flameAt.values()];
   state.powerups = state.powerups.filter((u) => !freshCells.has(cellIndex(state, u.x, u.y)));
 
-  for (const i of bricks) {
+  for (const [i, breaker] of bricks) {
     const x = i % state.width;
     const y = (i - x) / state.width;
     state.grid[i] = CELL_EMPTY;
+    const credited = state.players[breaker];
+    if (credited) credited.bricks++;
     events.push({ type: 'brickDestroyed', x, y });
     if (nextRandom(state) < POWERUP_DROP_CHANCE) {
       state.powerups.push({ x, y, type: 1 + nextInt(state, 3) });
@@ -272,7 +289,10 @@ function resolveDeaths(state: GameState, players: PlayerState[], events: GameEve
     p.bombPressed = false;
     p.deaths++;
     const suicide = killer === p.id;
-    if (suicide) p.points += POINTS_SUICIDE;
+    if (suicide) {
+      p.points += POINTS_SUICIDE;
+      p.suicides++;
+    }
     else {
       const k = killer ? state.players[killer] : undefined;
       if (k) {

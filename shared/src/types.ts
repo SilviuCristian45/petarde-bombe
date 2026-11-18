@@ -30,6 +30,10 @@ export interface PlayerState {
   kills: number;
   deaths: number;
   points: number;
+  // Match statistics for the end-of-match awards; they do not affect scoring.
+  suicides: number;
+  bricks: number; // bricks broken by this player's blasts (chains credit whoever lit them)
+  pickups: number;
 }
 
 export interface BombState {

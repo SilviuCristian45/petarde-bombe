@@ -40,6 +40,9 @@ const PLAYER_KEYS = [
   'kills',
   'deaths',
   'points',
+  'suicides',
+  'bricks',
+  'pickups',
 ] as const;
 const BOMB_KEYS = ['id', 'x', 'y', 'owner', 'fuse', 'range'] as const;
 const FLAME_KEYS = ['x', 'y', 'ttl', 'owner'] as const;

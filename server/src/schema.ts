@@ -23,6 +23,9 @@ export const PlayerSchema = schema(
     kills: t.uint16(),
     deaths: t.uint16(),
     points: t.int16(),
+    suicides: t.uint16(),
+    bricks: t.uint16(),
+    pickups: t.uint16(),
   },
   'Player',
 );
