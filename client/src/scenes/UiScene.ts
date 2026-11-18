@@ -2,15 +2,19 @@ import Phaser from 'phaser';
 import { isMuted, toggleMute } from '../audio/sound';
 import { GAME_W } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
+import { Toasts, type ToastOptions } from '../ui/Toasts';
 
-/** Runs on top of every other scene from the intro on: mute and fullscreen toggles. */
+/** Runs on top of every other scene from the intro on: mute and fullscreen toggles, toasts. */
 export class UiScene extends Phaser.Scene {
+  toasts!: Toasts;
+
   constructor() {
     super('ui');
   }
 
   create(): void {
     ensureTextures(this);
+    this.toasts = new Toasts(this);
     const mute = iconButton(this, GAME_W - 20, isMuted() ? TEX.soundOff : TEX.soundOn, () => {
       toggleMute(this.game);
       mute.setTexture(isMuted() ? TEX.soundOff : TEX.soundOn);
@@ -41,6 +45,12 @@ function iconButton(scene: Phaser.Scene, x: number, texture: string, onClick: ()
   button.on('pointerout', () => button.setAlpha(0.75));
   button.on('pointerup', onClick);
   return button;
+}
+
+/** A toast in the top-right corner, above whatever scene is running. */
+export function showToast(game: Phaser.Game, opts: ToastOptions): void {
+  const ui = game.scene.getScene('ui') as UiScene | null;
+  if (ui?.scene.isActive()) ui.toasts.show(opts);
 }
 
 /** Keys typed into the nickname or code fields are text, not shortcuts. */
