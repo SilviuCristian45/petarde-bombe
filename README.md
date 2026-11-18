@@ -9,8 +9,8 @@ Se joacă la **https://bombe-petarde.duckdns.org**. Phaser 3 + TypeScript + Vite
 
 ## Cum se joacă
 
-1. **Intră**, alege-ți un nume, apoi **Creează joc** și trimite prietenilor linkul (`Copiază link`)
-   sau codul de 6 caractere. Ei intră cu **Intră la un prieten** sau direct din link.
+1. **Intră**, alege-ți un nume, apoi **Creează joc** și trimite prietenilor linkul (`Copiază link`,
+   pe telefon `Trimite invitația`, direct în WhatsApp & co.) sau codul de 6 caractere. Ei intră cu **Intră la un prieten** sau direct din link.
    Fără internet: **Joacă offline cu boți**.
 2. În lobby, hostul (cu coroniță) alege 3/5/7 runde, adaugă boți și apasă **Start** (minim 2 jucători).
 3. Fiecare rundă începe cu **3, 2, 1, FOC!**; până la FOC nu se mișcă nimeni.
@@ -35,6 +35,23 @@ Se joacă la **https://bombe-petarde.duckdns.org**. Phaser 3 + TypeScript + Vite
 
 Sus în dreapta: sunet pornit/oprit și fullscreen. În meniu: **Efecte reduse** (mai puține particule,
 fără zăpadă), pentru calculatoare și telefoane mai slabe; setarea se ține minte pe dispozitiv.
+
+### Pe telefon
+
+Merge pe Android (Chrome) și iPhone (Safari), online și offline. Lobby-ul și meciul se joacă pe
+orizontală (pe verticală apare "Rotește telefonul"); intro-ul, numele și meniul merg în ambele poziții.
+
+- **D-pad** în stânga (ții apăsat = mergi; alunecă degetul pe altă săgeată ca să schimbi direcția) și
+  butonul mare de **petardă** în dreapta; merg simultan, cu două degete.
+- Butoane în loc de taste: **Ieși**, **Clasament** (atinge din nou ca să-l închizi), **Pauză** (offline),
+  **Sari peste rundă** și **Încă un meci** pentru host.
+- **Setări** (în meniu și în lobby): Efecte reduse (pornit implicit pe telefon), Joystick în loc de
+  D-pad, Mod stângaci (D-pad-ul și petarda își schimbă locul, clasamentul trece în stânga), Vibrații
+  (scurt la petardă, lung la moarte; doar unde browserul știe să vibreze).
+- Android: primul tap din lobby sau din meci trece pe tot ecranul. iPhone nu are fullscreen în Safari:
+  meniul sugerează **Partajează → Adaugă pe ecranul principal**, de unde jocul pornește fără bare.
+- Ecranul nu se stinge în timpul jocului. Dacă ieși din aplicație: offline jocul intră în pauză,
+  online conexiunea rămâne și revii direct în meci (după mai mult de ~15 s fără conexiune locul se pierde).
 
 Ieșirea e definitivă: din lobby imediat, din meci după confirmare ("Pierzi runda." dacă ești în viață);
 în meciul curent rămâi în clasament ca "a ieșit", la întoarcerea în lobby nu mai apari. Doar o cădere
@@ -76,14 +93,17 @@ deploy/   instalare și actualizare pe VPS (vezi deploy/README.md)
   Jucătorii influențează jocul doar prin `applyInput`; `step` avansează un tick și întoarce evenimente
   (sunete, efecte). Tot aici: lobby/runde/meci (`match.ts`), strângerea arenei, boții, numărătoarea de
   start, statisticile de meci (sinucideri, cadouri sparte, power-up-uri) și premiile (`awards.ts`).
-- **`/client`**: scene intro → nume → meniu → lobby ⇄ joc, plus `UiScene` deasupra (sunet, fullscreen,
-  toast-uri). Scenele vorbesc cu jocul doar prin `GameTransport`: `LocalTransport` (simularea în
-  browser, cu boți) sau `ColyseusTransport` (room pe server). Grafica e desenată procedural la pornire;
-  particulele au un plafon global (`render/fx.ts`), sunetele sunt în `audio/sfx.ts`.
+- **`/client`**: scene intro → nume → meniu → lobby ⇄ joc. Intro-ul, numele, meniul și lobby-ul sunt
+  HTML/CSS peste pânza Phaser (care desenează doar cerul cu zăpadă în spate); meciul e desenat în Phaser.
+  Iconițele de sunet/fullscreen, toast-urile, controalele touch și "Rotește telefonul" sunt tot HTML.
+  Scenele vorbesc cu jocul doar prin `GameTransport`: `LocalTransport` (simularea în browser, cu boți)
+  sau `ColyseusTransport` (room pe server). Grafica e desenată procedural la pornire; particulele au un
+  plafon global (`render/fx.ts`), sunetele sunt în `audio/sfx.ts`.
 - **`/server`**: room-ul `bombe` (codul e id-ul room-ului), validare completă pe server, `GET /health`
   și `GET /rooms/:cod`.
 
-Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
+Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`,
+`?touch` / `?touch=0` (forțează varianta de telefon, cu controale touch, pe desktop, sau invers).
 Oricare dintre ele pornește direct un meci local (fără intro, meniu și lobby); `Enter` la final pornește
 imediat alt meci. `?debug` afișează gridul cu coordonate, hitbox-urile, zonele de pericol, tick-ul,
 FPS-ul și intenția + drumul fiecărui bot.
@@ -99,6 +119,11 @@ npm test           # testele din /shared și ale serverului
 npm run typecheck
 npm run build      # client/dist (static) + server/dist/index.js (un singur fișier)
 ```
+
+Pe telefon, în aceeași rețea Wi-Fi: Vite ascultă pe toate interfețele, deci jocul se deschide la
+`http://<IP-ul calculatorului>:5173` (adresa apare în consola lui `npm run dev`, la "Network").
+Pe HTTP simplu browserul nu dă Wake Lock, Web Share și clipboard (cer HTTPS); restul merge.
+Pentru emulare: Chrome DevTools → device mode (iPhone / Android, ambele orientări), cu reîncărcare.
 
 Imaginea de preview pentru linkuri (`client/public/og.png`, 1200×630) și iconițele (`favicon.svg`,
 `favicon-32.png`, `apple-touch-icon.png`, `icon-512.png`) sunt desenate din cod în
