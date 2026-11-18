@@ -1,0 +1,37 @@
+# systemd unit for the Bombe și Petarde game server.
+# Install: see server/README.md ("Deploy"). Paths assume /opt/bombe.
+[Unit]
+Description=Bombe și Petarde (Colyseus)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bombe
+Group=bombe
+WorkingDirectory=/opt/bombe/server
+ExecStart=/usr/bin/node /opt/bombe/server/dist/index.js
+Environment=NODE_ENV=production
+Environment=PORT=2567
+Environment=MAX_ROOMS=20
+Restart=always
+RestartSec=3
+
+# Shared 1 GB VPS: keep the game in its own small box.
+MemoryMax=300M
+Environment=NODE_OPTIONS=--max-old-space-size=200
+
+# Hardening: the process only needs to read its bundle and listen on loopback.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
