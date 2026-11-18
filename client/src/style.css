@@ -599,6 +599,42 @@ button {
   height: 16px;
 }
 
+/* A bot's level at the end of its row: green, yellow, red. The host cycles it with a click. */
+.bot-level {
+  margin-left: auto;
+  flex: none;
+  min-width: 64px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--bg);
+  background: var(--lvl, var(--muted));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.bot-level.lvl-0 {
+  --lvl: #52b788;
+}
+
+.bot-level.lvl-1 {
+  --lvl: #ffd60a;
+}
+
+.bot-level.lvl-2 {
+  --lvl: #ff6b6b;
+}
+
+.bot-level:not(:disabled):hover {
+  filter: brightness(1.15);
+}
+
+.bot-level:disabled {
+  cursor: default;
+}
+
 .rules {
   white-space: pre-line;
   margin: 14px 0 0;
@@ -631,6 +667,13 @@ button {
 .round-btn {
   min-width: 52px;
   font-size: 20px;
+}
+
+.level-btn {
+  min-width: 78px;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: 16px;
 }
 
 .lobby-side .hint {
@@ -670,7 +713,16 @@ button {
     font-size: 11px;
   }
   .lobby-side {
-    gap: 9px;
+    gap: 7px;
+  }
+  .bot-level {
+    min-width: 54px;
+    font-size: 12px;
+    padding: 1px 6px;
+  }
+  .level-btn {
+    min-width: 0;
+    font-size: 14px;
   }
   .lobby-side .hint {
     min-height: 0;

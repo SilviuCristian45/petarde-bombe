@@ -13,6 +13,10 @@ Se joacă la **https://bombe-petarde.duckdns.org**. Phaser 3 + TypeScript + Vite
    pe telefon `Trimite invitația`, direct în WhatsApp & co.) sau codul de 6 caractere. Ei intră cu **Intră la un prieten** sau direct din link.
    Fără internet: **Joacă offline cu boți**.
 2. În lobby, hostul (cu coroniță) alege 3/5/7 runde, adaugă boți și apasă **Start** (minim 2 jucători).
+   **Nivel boți** (Ușor / Mediu / Greu, implicit Mediu) se aplică boților adăugați după aceea; lângă
+   fiecare bot apare nivelul lui, iar hostul îl schimbă cu un clic pe etichetă. Ușor: reacționează
+   încet, mai mult sparge cadouri decât vânează, greșește și ezită, dar tot fuge de explozii. Mediu:
+   reacție de ~0,2 s, vânează uneori. Greu: decide la fiecare tick și vânează mereu.
 3. Fiecare rundă începe cu **3, 2, 1, FOC!**; până la FOC nu se mișcă nimeni.
 4. Pune petarde ca să spargi cadourile și să-i prinzi pe ceilalți. Din cadouri pică power-up-uri:
    o petardă în plus, rază mai mare, viteză. După 2 minute arena începe să se strângă în spirală.
@@ -103,6 +107,7 @@ deploy/   instalare și actualizare pe VPS (vezi deploy/README.md)
   și `GET /rooms/:cod`.
 
 Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`,
+`?botlevel=usor|mediu|greu` (nivelul boților, implicit mediu),
 `?touch` / `?touch=0` (forțează varianta de telefon, cu controale touch, pe desktop, sau invers).
 Oricare dintre ele pornește direct un meci local (fără intro, meniu și lobby); `Enter` la final pornește
 imediat alt meci. `?debug` afișează gridul cu coordonate, hitbox-urile, zonele de pericol, tick-ul,

@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
 import {
+  BOT_LEVELS,
   canStart,
   MAX_PLAYERS,
   MIN_PLAYERS_TO_START,
+  nextBotLevel,
   POINTS_KILL,
   POINTS_ROUND_WIN,
   POINTS_SUICIDE,
@@ -10,6 +12,7 @@ import {
   sortedPlayers,
   type GameState,
 } from '@petarde/shared';
+import { BOT_LEVEL_LABELS } from '../botLevels';
 import { keepScreenOn } from '../device-apis';
 import { isTouch } from '../device';
 import type { GameTransport } from '../net/GameTransport';
@@ -32,6 +35,10 @@ interface PlayerRow {
   avatar: HTMLImageElement;
   name: HTMLElement;
   crown: HTMLImageElement;
+  /** The bot's level; the host cycles it with a click. */
+  level: HTMLButtonElement;
+  /** Id of the bot shown in this row ('' = not a bot). */
+  botId: string;
 }
 
 const COPIED_MS = 1500;
@@ -43,6 +50,7 @@ export class LobbyScene extends Phaser.Scene {
   private transport!: GameTransport;
   private rows: PlayerRow[] = [];
   private roundButtons: HTMLButtonElement[] = [];
+  private levelButtons: HTMLButtonElement[] = [];
   private addBotButton!: HTMLButtonElement;
   private removeBotButton!: HTMLButtonElement;
   private startButton!: HTMLButtonElement;
@@ -60,6 +68,7 @@ export class LobbyScene extends Phaser.Scene {
     this.transport = data.transport;
     this.rows = [];
     this.roundButtons = [];
+    this.levelButtons = [];
     this.copyReset = undefined;
   }
 
@@ -96,9 +105,12 @@ export class LobbyScene extends Phaser.Scene {
       const avatar = el('img', { attrs: { alt: '' } });
       const name = el('span', { class: 'name' });
       const crown = el('img', { class: 'crown', attrs: { alt: 'host', src: crownUrl } });
-      const row = el('li', { class: 'player-row' }, [avatar, name, crown]);
+      const level = el('button', { class: 'bot-level', attrs: { type: 'button' } });
+      const row = el('li', { class: 'player-row' }, [avatar, name, crown, level]);
       list.append(row);
-      this.rows.push({ row, avatar, name, crown });
+      const entry: PlayerRow = { row, avatar, name, crown, level, botId: '' };
+      level.addEventListener('click', () => this.cycleBotLevel(entry.botId));
+      this.rows.push(entry);
     }
     const rules = [
       `Punctaj: ultimul în viață +${POINTS_ROUND_WIN} · kill +${POINTS_KILL} · propria petardă ${POINTS_SUICIDE}`,
@@ -113,6 +125,11 @@ export class LobbyScene extends Phaser.Scene {
       b.classList.add('round-btn');
       return b;
     });
+    this.levelButtons = BOT_LEVELS.map((level) => {
+      const b = button(BOT_LEVEL_LABELS[level]!, () => this.transport.send({ type: 'botLevel', level }));
+      b.classList.add('level-btn');
+      return b;
+    });
     this.addBotButton = button('+Bot', () => this.transport.send({ type: 'addBot' }));
     this.removeBotButton = button('-Bot', () => this.transport.send({ type: 'removeBot' }));
     this.startButton = button('Start', () => this.transport.send({ type: 'start' }), 'primary', 'medium');
@@ -121,6 +138,8 @@ export class LobbyScene extends Phaser.Scene {
     return el('div', { class: 'lobby-side' }, [
       el('div', { class: 'label', text: 'Runde' }),
       el('div', { class: 'btn-row' }, this.roundButtons),
+      el('div', { class: 'label', text: 'Nivel boți' }),
+      el('div', { class: 'btn-row' }, this.levelButtons),
       el('div', { class: 'btn-row' }, [this.addBotButton, this.removeBotButton]),
       this.startButton,
       this.hint,
@@ -151,14 +170,16 @@ export class LobbyScene extends Phaser.Scene {
       show(row.crown, !!p && p.id === state.hostId);
       row.row.classList.toggle('empty', !p);
       row.row.classList.toggle('away', !!p && !p.connected);
+      row.botId = p?.isBot ? p.id : '';
+      show(row.level, !!row.botId);
       if (!p) {
         setText(row.name, 'loc liber');
         return;
       }
       const src = avatarUrl(this.game, p.slot);
       if (row.avatar.getAttribute('src') !== src) row.avatar.src = src;
-      const tag = p.id === this.transport.playerId ? ' (tu)' : p.isBot ? ' · bot' : '';
-      setText(row.name, p.name + tag);
+      setText(row.name, p.id === this.transport.playerId ? `${p.name} (tu)` : p.name);
+      if (p.isBot) this.syncLevelTag(row.level, p.botLevel, state.hostId === this.transport.playerId);
     });
   }
 
@@ -170,6 +191,11 @@ export class LobbyScene extends Phaser.Scene {
       setButtonStyle(b, state.roundsTotal === rounds ? 'primary' : 'secondary');
       b.disabled = !isHost && state.roundsTotal !== rounds;
     });
+    BOT_LEVELS.forEach((level, i) => {
+      const b = this.levelButtons[i]!;
+      setButtonStyle(b, state.botLevel === level ? 'primary' : 'secondary');
+      b.disabled = !isHost && state.botLevel !== level;
+    });
     const players = Object.values(state.players);
     show(this.addBotButton, isHost);
     this.addBotButton.disabled = players.length >= MAX_PLAYERS;
@@ -180,6 +206,20 @@ export class LobbyScene extends Phaser.Scene {
     if (!isHost) setText(this.hint, 'Așteaptă ca hostul să pornească meciul.');
     else if (players.length < MIN_PLAYERS_TO_START) setText(this.hint, `Minim ${MIN_PLAYERS_TO_START} jucători pentru Start.`);
     else setText(this.hint, '');
+  }
+
+  private syncLevelTag(tag: HTMLButtonElement, botLevel: number, isHost: boolean): void {
+    const label = BOT_LEVEL_LABELS[botLevel] ?? '';
+    setText(tag, label);
+    for (const level of BOT_LEVELS) tag.classList.toggle(`lvl-${level}`, botLevel === level);
+    tag.disabled = !isHost;
+    tag.title = isHost ? `Bot ${label}: clic ca să schimbi nivelul` : `Bot, nivel ${label}`;
+  }
+
+  /** Easy -> medium -> hard -> easy; the server checks that we are the host and still in the lobby. */
+  private cycleBotLevel(botId: string): void {
+    const bot = this.transport.getState().players[botId];
+    if (bot?.isBot) this.transport.send({ type: 'setBotLevel', botId, level: nextBotLevel(bot.botLevel) });
   }
 
   private async share(): Promise<void> {

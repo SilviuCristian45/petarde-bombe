@@ -4,6 +4,7 @@ import { DEFAULT_ROUNDS, isValidRoomCode, MAX_PLAYERS, normalizeRoomCode, ROUND_
 import { initSfx } from './audio/sfx';
 import { initMute } from './audio/sound';
 import { isTouch } from './device';
+import { parseBotLevel } from './botLevels';
 import { LocalTransport } from './net/LocalTransport';
 import { resumableRoomCode } from './net/rooms';
 import { GAME_H, GAME_W } from './render/layout';
@@ -19,8 +20,8 @@ import { initRotatePrompt } from './ui/orientation';
 const params = new URLSearchParams(window.location.search);
 
 // Debug URL options skip the intro and menu and start a local match at once:
-// ?debug, ?bots=1..5 (default 3), ?rounds=3|5|7, ?seed=abc
-const quick = ['debug', 'bots', 'rounds', 'seed'].some((key) => params.has(key));
+// ?debug, ?bots=1..5 (default 3), ?rounds=3|5|7, ?seed=abc, ?botlevel=usor|mediu|greu
+const quick = ['debug', 'bots', 'rounds', 'seed', 'botlevel'].some((key) => params.has(key));
 
 function quickStart(): GameSceneData {
   const bots = Phaser.Math.Clamp(Number(params.get('bots') ?? 3) || 3, 1, MAX_PLAYERS - 1);
@@ -29,6 +30,7 @@ function quickStart(): GameSceneData {
     transport: new LocalTransport({
       name: 'Jucător',
       bots,
+      botLevel: parseBotLevel(params.get('botlevel')),
       rounds: ROUND_OPTIONS.includes(rounds) ? rounds : DEFAULT_ROUNDS,
       seed: params.get('seed') ?? Math.random().toString(36).slice(2),
       autoStart: true,
