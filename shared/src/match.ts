@@ -1,5 +1,8 @@
 import {
+  BOT_HARD,
+  BOT_LEVELS,
   BOT_NAMES,
+  DEFAULT_BOT_LEVEL,
   DEFAULT_ROUNDS,
   DIR_NONE,
   GRID_H,
@@ -31,6 +34,7 @@ export function createGameState(opts: CreateOptions): GameState {
     phase: 'lobby',
     hostId: '',
     roundsTotal: DEFAULT_ROUNDS,
+    botLevel: DEFAULT_BOT_LEVEL,
     round: 0,
     tick: 0,
     roundTick: 0,
@@ -65,7 +69,7 @@ export function sanitizeName(name: string): string {
 export type JoinResult = { ok: true; player: PlayerState } | { ok: false; reason: 'in-progress' | 'full' | 'duplicate' };
 
 /** Joins are only allowed in the lobby. The first human to join becomes host. */
-export function addPlayer(state: GameState, id: string, name: string, isBot = false): JoinResult {
+export function addPlayer(state: GameState, id: string, name: string, isBot = false, botLevel = BOT_HARD): JoinResult {
   if (state.phase !== 'lobby') return { ok: false, reason: 'in-progress' };
   if (state.players[id]) return { ok: false, reason: 'duplicate' };
   const used = new Set(Object.values(state.players).map((p) => p.slot));
@@ -78,6 +82,7 @@ export function addPlayer(state: GameState, id: string, name: string, isBot = fa
     slot,
     joinOrder: state.joinCounter++,
     isBot,
+    botLevel,
     connected: true,
     left: false,
     alive: false,
@@ -101,12 +106,32 @@ export function addPlayer(state: GameState, id: string, name: string, isBot = fa
   return { ok: true, player };
 }
 
-/** Adds a bot with a free traditional name. Host-only, lobby-only. */
+/** Adds a bot with a free traditional name, at the room's current bot level. Host-only, lobby-only. */
 export function addBot(state: GameState, byId: string, botId: string): JoinResult | { ok: false; reason: 'not-host' } {
   if (byId !== state.hostId) return { ok: false, reason: 'not-host' };
   const taken = new Set(Object.values(state.players).map((p) => p.name));
   const name = BOT_NAMES.find((n) => !taken.has(n)) ?? 'Bot';
-  return addPlayer(state, botId, name, true);
+  return addPlayer(state, botId, name, true, state.botLevel);
+}
+
+/** The level for bots added from now on ("Nivel boți"). Host-only, lobby-only. */
+export function setDefaultBotLevel(state: GameState, byId: string, level: number): boolean {
+  if (byId !== state.hostId || state.phase !== 'lobby' || !BOT_LEVELS.includes(level)) return false;
+  state.botLevel = level;
+  return true;
+}
+
+/** Changes one bot's level. Host-only, lobby-only. */
+export function setBotLevel(state: GameState, byId: string, botId: string, level: number): boolean {
+  const bot = state.players[botId];
+  if (byId !== state.hostId || state.phase !== 'lobby' || !bot?.isBot || !BOT_LEVELS.includes(level)) return false;
+  bot.botLevel = level;
+  return true;
+}
+
+/** Easy -> medium -> hard -> easy, for the lobby's one-click level tag. */
+export function nextBotLevel(level: number): number {
+  return BOT_LEVELS[(BOT_LEVELS.indexOf(level) + 1) % BOT_LEVELS.length]!;
 }
 
 /** Removes the most recently added bot. Host-only, lobby-only. */

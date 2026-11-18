@@ -16,6 +16,7 @@ export interface PlayerState {
   slot: number; // 0..5, also the color index and spawn index
   joinOrder: number;
   isBot: boolean;
+  botLevel: number; // BOT_EASY..BOT_HARD, only meaningful for bots
   connected: boolean;
   left: boolean; // gone for good mid-match: stays in the standings until the lobby, never respawns
   alive: boolean;
@@ -63,6 +64,7 @@ export interface GameState {
   phase: Phase;
   hostId: string;
   roundsTotal: number;
+  botLevel: number; // level given to bots added from now on
   round: number;
   tick: number;
   roundTick: number;

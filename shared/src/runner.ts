@@ -1,5 +1,5 @@
 import { TICK_RATE } from './constants';
-import { botDecide } from './bot';
+import { botAct } from './bot';
 import { onlyBotsAlive, sortedPlayers } from './match';
 import { applyInput, step } from './sim';
 import type { GameEvent, GameState, PlayerInput } from './types';
@@ -14,7 +14,9 @@ const MAX_SKIP_TICKS = 10 * 60 * TICK_RATE;
 export function runTick(state: GameState, inputs: readonly PlayerInput[]): GameEvent[] {
   for (const input of inputs) applyInput(state, input);
   for (const p of sortedPlayers(state)) {
-    if (p.isBot && p.alive) applyInput(state, { playerId: p.id, action: botDecide(state, p.id) });
+    if (!p.isBot || !p.alive) continue;
+    const action = botAct(state, p.id);
+    if (action) applyInput(state, { playerId: p.id, action });
   }
   return step(state);
 }

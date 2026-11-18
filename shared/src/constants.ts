@@ -78,4 +78,11 @@ export const PLAYER_COLORS: readonly number[] = [
   0xff8c42, // portocaliu
 ];
 
+// Bot difficulty (PlayerState.botLevel, GameState.botLevel for newly added bots).
+export const BOT_EASY = 0;
+export const BOT_MEDIUM = 1;
+export const BOT_HARD = 2;
+export const BOT_LEVELS: readonly number[] = [BOT_EASY, BOT_MEDIUM, BOT_HARD];
+export const DEFAULT_BOT_LEVEL = BOT_MEDIUM;
+
 export const BOT_NAMES: readonly string[] = ['Capra', 'Ursul', 'Sorcova', 'Plugușorul', 'Steaua', 'Căiuții'];
