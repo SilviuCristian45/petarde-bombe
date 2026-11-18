@@ -24,7 +24,8 @@ Environment=NODE_OPTIONS=--max-old-space-size=200
 # Hardening: the process only needs to read its bundle and listen on loopback.
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+# read-only, not true: a Node installed with nvm lives under /home/ubuntu
+ProtectHome=read-only
 PrivateTmp=true
 PrivateDevices=true
 ProtectKernelTunables=true

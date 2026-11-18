@@ -1,6 +1,6 @@
 # Site block for the game, on its own subdomain. Append it to the existing
 # /etc/caddy/Caddyfile (the other project's blocks stay as they are).
-bombe.duckdns.org {
+bombe-petarde.duckdns.org {
 	encode zstd gzip
 
 	# Colyseus: HTTP matchmaking and the WebSocket upgrade both go through here.
