@@ -1,14 +1,14 @@
 # Bombe și Petarde
 
 Joc multiplayer de tip arenă cu bombe, în browser, cu temă de Revelion românesc.
-Phaser 3 + TypeScript + Vite, server autoritar Colyseus (în lucru).
+Phaser 3 + TypeScript + Vite, server autoritar Colyseus.
 
 ## Structură
 
 ```
 shared/   logica jocului, TypeScript pur (fără Phaser/DOM), deterministă, testată cu vitest
 client/   Phaser 3 + Vite; randează starea și trimite input-uri printr-un GameTransport
-server/   planul pentru serverul Colyseus (vezi server/README.md)
+server/   server Colyseus autoritar care rulează aceeași simulare (vezi server/README.md)
 ```
 
 ## Logica jocului (`/shared`)
@@ -23,8 +23,10 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
 - Reguli: explozii în cruce oprite de ziduri, lanț de bombe (kill-urile din lanț merg la cel
   care l-a declanșat), power-up-uri (bombă, rază, viteză), harta se strânge în spirală după
   2 minute, victorie de rundă +3, kill +1, sinucidere -1; egal dacă mor toți simultan.
-- Lobby: cod de room de 6 caractere, max 6 jucători, host transferat la plecare,
+- Lobby: cod de room de 6 caractere, max 6 jucători, host transferat la plecare (niciodată unui bot),
   intrare doar în lobby, 3/5/7 runde, minim 2 jucători (boții se numără).
+- Cine iese definitiv în timpul meciului moare fără să dea kill cuiva și rămâne în clasament
+  ("a ieșit") până la întoarcerea în lobby.
 - Boți (`botDecide`): fug din zonele de explozie, sparg ziduri, pun bombe lângă jucători.
   `botThink` întoarce aceeași decizie plus intenția (fuge/sparge/atacă/bonus) și drumul planificat.
 
@@ -33,23 +35,28 @@ server/   planul pentru serverul Colyseus (vezi server/README.md)
 - Scene: intro → meniu → lobby → joc (+ `UiScene` deasupra tuturor, cu butonul de mute).
   - Intro: butonul "Intră" pornește `audio/intro.ogg` (fallback `.mp3`); dacă fișierul lipsește, e liniște.
   - Meniu: nickname (salvat în `localStorage`, max 16), "Creează room" sau "Intră cu cod"
-    (6 caractere, uppercase automat, fără 0/O/1/I/L).
+    (6 caractere, uppercase automat, fără 0/O/1/I/L), plus "Joacă offline cu boți".
+    Erori în română: cod inexistent, room plin, meci în desfășurare, server plin, server indisponibil;
+    când serverul nu răspunde, butonul "Joacă offline cu boți" apare evidențiat chiar sub mesaj.
   - Lobby: codul, "Copiază link" (`/?room=COD`), jucătorii cu culori și coroniță la host;
-    hostul alege 3/5/7 runde și pornește meciul (minim 2 jucători). Local: +Bot / -Bot.
+    hostul alege 3/5/7 runde, adaugă/scoate boți și pornește meciul (minim 2 jucători).
   - `?room=COD` duce, după intro, la un meniu care cere doar nickname-ul și intră în room.
   - După meci, `Enter` întoarce în lobby (același room).
-- Room-urile vin din `client/src/net/rooms.ts`. Până la server, "Creează room" deschide un room local
-  cu un bot, iar intrarea cu cod spune că serverul online nu e disponibil încă.
+- Room-urile vin din `client/src/net/rooms.ts`: "Creează room" și "Intră cu cod" merg pe server,
+  "Joacă offline cu boți" rulează totul în browser.
 - Scenele citesc starea și trimit input-uri doar prin `GameTransport` (`client/src/net`).
-  `LocalTransport` rulează simularea din `/shared` în browser, cu boți; `ColyseusTransport` va urma.
+  `LocalTransport` rulează simularea din `/shared` în browser, cu boți; `ColyseusTransport` joacă
+  într-un room de pe server (starea vine prin patch-uri, efectele sunt redate la tick-ul lor).
+- Reconectare: la o cădere de rețea apare "Se reconectează..." și jocul continuă (serverul păstrează
+  locul 15 s); un reload al paginii te duce înapoi direct în room. Dacă nu se mai poate, revii în meniu.
 - Input-ul vine dintr-un `InputSource` (`client/src/input`); acum tastatură: săgeți/WASD + Spațiu.
 - Jucătorii sunt interpolați între ultimele două tick-uri; grafica e desenată procedural la pornire.
 - La moarte: artificii în culoarea jucătorului, "Ai murit!" cu cauza, apoi mod spectator;
   în HUD morții apar tăiați până la runda următoare.
 - În pauza dintre runde se vede deja harta nouă, estompată, cu clasamentul peste ea
   (harta e generată de `prepareRound` când începe pauza).
-- `P` pune pauză simulării locale (doar cu `LocalTransport`).
-  `Enter` când mai trăiesc doar boți: sare peste rundă (simulează instant până la final).
+- `P` pune pauză simulării locale (doar offline).
+  `Enter` când mai trăiesc doar boți: hostul sare peste rundă (simulează instant până la final).
 
 Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`.
 Oricare dintre ele sare peste intro, meniu și lobby și pornește direct un meci local;
@@ -63,15 +70,17 @@ Necesită Node ≥ 22.12.
 
 ```bash
 npm install
-npm run dev        # client pe http://localhost:5173
-npm test           # testele din /shared
+npm run dev        # client pe http://localhost:5173 + server Colyseus pe :2567
+npm test           # testele din /shared și ale serverului
 npm run typecheck
 ```
 
 ## Build
 
 ```bash
-npm run build      # build static în client/dist
+npm run build      # build static în client/dist + server/dist/index.js (un singur fișier)
 ```
 
-Endpoint-ul serverului se configurează prin `VITE_SERVER_URL` (vezi `client/.env.example`).
+Endpoint-ul serverului se configurează prin `VITE_SERVER_URL` (vezi `client/.env.example`):
+implicit `/colyseus` pe același domeniu, gol = build doar offline.
+Deploy (VPS cu systemd + Caddy): pașii sunt în `server/README.md`, fișierele în `server/deploy/`.
