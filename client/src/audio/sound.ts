@@ -36,7 +36,8 @@ export async function playOptional(game: Phaser.Game, key: string, urls: string[
   return sound.play(key);
 }
 
-async function fetchFirst(context: AudioContext, urls: string[]): Promise<AudioBuffer | null> {
+/** The first of `urls` that loads and decodes, or null (missing files are normal: they are optional). */
+export async function fetchFirst(context: AudioContext, urls: string[]): Promise<AudioBuffer | null> {
   for (const url of urls) {
     try {
       const res = await fetch(url);

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { addSnow } from '../render/fx';
 import { FONT, GAME_H, GAME_W } from '../render/layout';
 
 // New Year's night sky shared by the intro, menu and lobby.
@@ -19,6 +20,7 @@ export function drawBackdrop(scene: Phaser.Scene): void {
   }
   // Snowy ground strip.
   scene.add.rectangle(GAME_W / 2, GAME_H - 12, GAME_W, 24, 0xeaf2ff, 0.12);
+  addSnow(scene, 0);
 }
 
 export function addTitle(scene: Phaser.Scene, y: number, size: number): Phaser.GameObjects.Text {
