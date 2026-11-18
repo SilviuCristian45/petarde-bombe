@@ -1,24 +1,16 @@
 import Phaser from 'phaser';
 import type { GameTransport } from '../net/GameTransport';
-import { FONT, GAME_W } from '../render/layout';
 import type { MenuSceneData } from '../scenes/MenuScene';
+import { el, setText, show } from './dom';
 
 /** "Se reconectează..." strip shown by the lobby and game scenes while an online room is down. */
 export class ConnectionBanner {
-  private readonly text: Phaser.GameObjects.Text;
+  private readonly node = el('div', { class: 'conn-banner', attrs: { role: 'status' } });
 
   constructor(private readonly scene: Phaser.Scene) {
-    this.text = scene.add
-      .text(GAME_W / 2, 6, '', {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#0b1026',
-        backgroundColor: '#ffb347',
-        padding: { x: 14, y: 6 },
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(100)
-      .setVisible(false);
+    show(this.node, false);
+    document.body.append(this.node);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.node.remove());
   }
 
   /** Returns false once the connection is gone for good; the scene has then switched to the menu. */
@@ -30,8 +22,11 @@ export class ConnectionBanner {
       this.scene.scene.start('menu', data);
       return false;
     }
-    const dots = '.'.repeat(1 + (Math.floor(time / 400) % 3));
-    this.text.setVisible(status === 'reconnecting').setText(`Conexiunea s-a întrerupt. Se reconectează${dots.padEnd(3)}`);
+    show(this.node, status === 'reconnecting');
+    if (status === 'reconnecting') {
+      const dots = '.'.repeat(1 + (Math.floor(time / 400) % 3));
+      setText(this.node, `Conexiunea s-a întrerupt. Se reconectează${dots.padEnd(3)}`);
+    }
     return true;
   }
 }

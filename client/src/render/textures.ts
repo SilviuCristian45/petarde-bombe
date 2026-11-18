@@ -15,10 +15,6 @@ export const TEX = {
   spark: 'spark',
   smoke: 'smoke',
   crown: 'crown',
-  soundOn: 'soundOn',
-  soundOff: 'soundOff',
-  fullscreenOn: 'fullscreenOn',
-  fullscreenOff: 'fullscreenOff',
   powerup: (type: number) => `powerup${type}`,
   player: (slot: number) => `player${slot}`,
 } as const;
@@ -76,40 +72,6 @@ function createTextures(scene: Phaser.Scene): void {
   g.fillTriangle(10, 1, 4, 14, 16, 14).fillRect(1, 12, 18, 4);
   g.fillStyle(0xe63946).fillCircle(10, 13, 2);
   bake(TEX.crown, 20, 16);
-
-  // Mute toggle: speaker with sound waves, or with a cross.
-  const speaker = () => {
-    g.fillStyle(0xeaf2ff).fillRect(4, 11, 6, 10).fillTriangle(8, 11, 16, 4, 16, 28).fillTriangle(8, 21, 16, 4, 16, 28);
-  };
-  speaker();
-  g.lineStyle(2, 0xeaf2ff);
-  g.beginPath().arc(17, 16, 6, -0.9, 0.9).strokePath();
-  g.beginPath().arc(17, 16, 11, -0.9, 0.9).strokePath();
-  bake(TEX.soundOn, 32, 32);
-  speaker();
-  g.lineStyle(3, 0xff6b81).lineBetween(20, 11, 29, 21).lineBetween(29, 11, 20, 21);
-  bake(TEX.soundOff, 32, 32);
-
-  // Fullscreen: four corner brackets, at the edges (enter) or folded toward the middle (exit).
-  const corners = (vertex: number, armDir: 1 | -1) => {
-    g.lineStyle(3, 0xeaf2ff);
-    const arm = 7;
-    for (const [sx, sy] of [
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1],
-    ] as const) {
-      // Corner point measured from the icon's matching corner; arms run along the edges.
-      const x = sx > 0 ? vertex : 32 - vertex;
-      const y = sy > 0 ? vertex : 32 - vertex;
-      g.lineBetween(x, y, x + sx * armDir * arm, y).lineBetween(x, y, x, y + sy * armDir * arm);
-    }
-  };
-  corners(6, 1);
-  bake(TEX.fullscreenOn, 32, 32);
-  corners(13, -1);
-  bake(TEX.fullscreenOff, 32, 32);
 
   const powerupColors: Record<number, number> = {
     [POWERUP_BOMB]: 0x4361ee,

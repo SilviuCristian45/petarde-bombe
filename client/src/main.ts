@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
+import './style.css';
 import { DEFAULT_ROUNDS, isValidRoomCode, MAX_PLAYERS, normalizeRoomCode, ROUND_OPTIONS } from '@petarde/shared';
 import { initSfx } from './audio/sfx';
 import { initMute } from './audio/sound';
+import { isTouch } from './device';
 import { LocalTransport } from './net/LocalTransport';
 import { resumableRoomCode } from './net/rooms';
 import { GAME_H, GAME_W } from './render/layout';
@@ -10,7 +12,9 @@ import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { MenuScene, type MenuSceneData } from './scenes/MenuScene';
 import { NameScene } from './scenes/NameScene';
-import { UiScene } from './scenes/UiScene';
+import { initChrome } from './ui/chrome';
+import { trackVisualViewport } from './ui/dom';
+import { initRotatePrompt } from './ui/orientation';
 
 const params = new URLSearchParams(window.location.search);
 
@@ -50,22 +54,33 @@ const switching = current !== null && invite !== undefined && invite !== current
 const resume = current !== null;
 const resumeData: MenuSceneData = switching ? { invite, switchFrom: current } : { resume: true };
 
+// Phones: no long-press menu (the CSS already stops selection and the callout); text fields keep theirs.
+if (isTouch) {
+  document.body.classList.add('touch');
+  document.addEventListener('contextmenu', (e) => {
+    if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+  });
+}
+
 const game = new Phaser.Game({
   type: Phaser.AUTO,
-  parent: 'game',
+  parent: 'stage',
   width: GAME_W,
   height: GAME_H,
   backgroundColor: '#0b1026',
   pixelArt: true,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  dom: { createContainer: true }, // menu text inputs
+  // The canvas only sees one finger at a time (HUD buttons); the HTML touch controls track their own.
+  input: { activePointers: 1 },
 });
 initMute(game);
 initSfx(game);
+// HTML layers over the canvas: mute/fullscreen icons and the rotate prompt (toasts and dialogs come and go).
+initChrome(game);
+initRotatePrompt();
+trackVisualViewport();
 game.scene.add('intro', IntroScene, !quick && !resume, menuData());
 game.scene.add('name', NameScene);
 game.scene.add('menu', MenuScene, resume, resumeData);
 game.scene.add('lobby', LobbyScene);
 game.scene.add('game', GameScene, quick, quick ? quickStart() : undefined);
-// Added last so it draws above every other scene; the intro launches it otherwise.
-game.scene.add('ui', UiScene, quick || resume);

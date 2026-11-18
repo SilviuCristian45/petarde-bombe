@@ -1,5 +1,5 @@
-import Phaser from 'phaser';
 import { normalizeRoomCode, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from '@petarde/shared';
+import { keepInViewOnFocus } from './dom';
 
 export const CODE_HINT = 'Codul are doar litere și cifre, fără 0, O, 1, I, L.';
 
@@ -17,14 +17,9 @@ export interface CodeInputHandlers {
  */
 export class CodeInput {
   readonly boxes: HTMLInputElement[] = [];
-  private readonly element: Phaser.GameObjects.DOMElement;
+  readonly element: HTMLDivElement;
 
-  constructor(
-    scene: Phaser.Scene,
-    x: number,
-    y: number,
-    private readonly handlers: CodeInputHandlers,
-  ) {
+  constructor(private readonly handlers: CodeInputHandlers) {
     const wrap = document.createElement('div');
     wrap.className = 'code-boxes';
     for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
@@ -33,21 +28,21 @@ export class CodeInput {
       box.maxLength = 2; // room for the replacement character before it is trimmed to one
       box.autocomplete = 'off';
       box.spellcheck = false;
+      // Phone keyboards: letters (upper case), no autocorrect or suggestions over the boxes.
       box.setAttribute('autocapitalize', 'characters');
+      box.setAttribute('autocorrect', 'off');
+      box.setAttribute('inputmode', 'text');
+      box.setAttribute('enterkeyhint', 'go');
       box.setAttribute('aria-label', `Caracterul ${i + 1} din cod`);
       box.addEventListener('input', () => this.onInput(i));
       box.addEventListener('keydown', (e) => this.onKey(i, e));
       box.addEventListener('paste', (e) => this.onPaste(e));
       box.addEventListener('focus', () => box.select());
+      keepInViewOnFocus(box);
       wrap.appendChild(box);
       this.boxes.push(box);
     }
-    this.element = scene.add.dom(x, y, wrap).setOrigin(0.5);
-  }
-
-  /** DOM elements draw above the canvas, so a dialog on the canvas has to hide them. */
-  setVisible(visible: boolean): void {
-    this.element.setVisible(visible);
+    this.element = wrap;
   }
 
   get code(): string {
@@ -64,7 +59,7 @@ export class CodeInput {
 
   focus(): void {
     const firstEmpty = this.boxes.find((b) => !b.value) ?? this.boxes[this.boxes.length - 1]!;
-    firstEmpty.focus();
+    firstEmpty.focus({ preventScroll: true });
   }
 
   private onInput(i: number): void {

@@ -10,13 +10,17 @@ import {
   sortedPlayers,
   type GameState,
 } from '@petarde/shared';
+import { keepScreenOn } from '../device-apis';
+import { isTouch } from '../device';
 import type { GameTransport } from '../net/GameTransport';
-import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { ensureTextures, TEX } from '../render/textures';
 import { drawBackdrop } from '../ui/backdrop';
-import { notifyPresence } from '../ui/presence';
 import { ConnectionBanner } from '../ui/ConnectionBanner';
-import { TextButton } from '../ui/TextButton';
+import { button, el, mountScreen, setButtonStyle, setText, show, textureUrl } from '../ui/dom';
+import { fullscreenOnFirstTap } from '../ui/fullscreen';
+import { requireLandscape } from '../ui/orientation';
+import { notifyPresence } from '../ui/presence';
+import { openSettings } from '../ui/settingsDialog';
 import type { GameSceneData } from './GameScene';
 
 export interface LobbySceneData {
@@ -24,29 +28,28 @@ export interface LobbySceneData {
 }
 
 interface PlayerRow {
-  avatar: Phaser.GameObjects.Image;
-  name: Phaser.GameObjects.Text;
-  crown: Phaser.GameObjects.Image;
+  row: HTMLElement;
+  avatar: HTMLImageElement;
+  name: HTMLElement;
+  crown: HTMLImageElement;
 }
 
-const LIST_X = 150; // avatar column
-const LIST_Y = 210;
-const ROW_H = 44;
-const SIDE_X = 700; // settings column center
 const COPIED_MS = 1500;
+/** Phones share the invite through the system sheet (WhatsApp...); desktops copy the link. */
+const SHARE_LABEL = isTouch ? 'Trimite invitația' : 'Copiază link';
 
 /** Room code and invite link, the players, and the host's round count / bots / Start. */
 export class LobbyScene extends Phaser.Scene {
   private transport!: GameTransport;
   private rows: PlayerRow[] = [];
-  private roundButtons: TextButton[] = [];
-  private addBotButton!: TextButton;
-  private removeBotButton!: TextButton;
-  private startButton!: TextButton;
-  private copyButton!: TextButton;
+  private roundButtons: HTMLButtonElement[] = [];
+  private addBotButton!: HTMLButtonElement;
+  private removeBotButton!: HTMLButtonElement;
+  private startButton!: HTMLButtonElement;
+  private shareButton!: HTMLButtonElement;
   private copyReset?: Phaser.Time.TimerEvent;
-  private hint!: Phaser.GameObjects.Text;
-  private countText!: Phaser.GameObjects.Text;
+  private hint!: HTMLElement;
+  private countText!: HTMLElement;
   private banner!: ConnectionBanner;
 
   constructor() {
@@ -63,75 +66,72 @@ export class LobbyScene extends Phaser.Scene {
   create(): void {
     ensureTextures(this);
     drawBackdrop(this);
-    const state = this.transport.getState();
+    requireLandscape(this);
+    keepScreenOn(this);
+    const disarm = fullscreenOnFirstTap();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, disarm);
 
-    // An offline room has no code worth sharing: nobody else can join it.
+    mountScreen(this, 'lobby', [el('div', { class: 'lobby-grid' }, [this.createHead(), this.createPlayers(), this.createSide()])]);
+    this.banner = new ConnectionBanner(this);
+  }
+
+  /** An offline room has no code worth sharing: nobody else can join it. */
+  private createHead(): HTMLElement {
     const online = this.transport.online;
-    this.add
-      .text(GAME_W / 2, 34, online ? 'Codul jocului' : 'Joc offline', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' })
-      .setOrigin(0.5);
-    this.add
-      .text(GAME_W / 2, 80, online ? state.code : 'cu boți', {
-        fontFamily: FONT,
-        fontSize: '56px',
-        color: '#ffe066',
-        stroke: '#7a1f2b',
-        strokeThickness: 6,
-        letterSpacing: 8,
-      })
-      .setOrigin(0.5);
-    this.copyButton = new TextButton(this, GAME_W / 2, 140, 'Copiază link', () => void this.copyLink(), 'secondary', 16).setVisible(online);
-    if (online) {
-      this.add
-        .text(GAME_W / 2, 172, 'Trimite linkul prietenilor ca să intre', { fontFamily: FONT, fontSize: '13px', color: '#9aa6c8' })
-        .setOrigin(0.5);
-    }
+    this.shareButton = button(SHARE_LABEL, () => void this.share(), 'secondary', 'small');
+    show(this.shareButton, online);
+    return el('div', { class: 'lobby-head' }, [
+      el('div', { class: 'label', text: online ? 'Codul jocului' : 'Joc offline' }),
+      el('div', { class: 'room-code', text: online ? this.transport.getState().code : 'cu boți' }),
+      this.shareButton,
+      online ? el('div', { class: 'share-hint', text: 'Trimite linkul prietenilor ca să intre' }) : null,
+    ]);
+  }
 
-    this.countText = this.add.text(LIST_X - 20, LIST_Y - 40, '', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' });
+  private createPlayers(): HTMLElement {
+    this.countText = el('div', { class: 'count' });
+    const list = el('ul', { class: 'player-rows' });
+    const crownUrl = textureUrl(this.game, TEX.crown);
     for (let i = 0; i < MAX_PLAYERS; i++) {
-      const y = LIST_Y + i * ROW_H;
-      this.add.rectangle(LIST_X + 150, y, 360, ROW_H - 6, 0x13203d, 0.8).setStrokeStyle(1, 0x24365e);
-      const avatar = this.add.image(LIST_X, y, TEX.player(0)).setScale(0.85);
-      const name = this.add.text(LIST_X + 30, y, '', { fontFamily: FONT, fontSize: '18px', color: '#ffffff' }).setOrigin(0, 0.5);
-      const crown = this.add.image(0, y - 1, TEX.crown).setOrigin(0, 0.5);
-      this.rows.push({ avatar, name, crown });
+      const avatar = el('img', { attrs: { alt: '' } });
+      const name = el('span', { class: 'name' });
+      const crown = el('img', { class: 'crown', attrs: { alt: 'host', src: crownUrl } });
+      const row = el('li', { class: 'player-row' }, [avatar, name, crown]);
+      list.append(row);
+      this.rows.push({ row, avatar, name, crown });
     }
-
-    this.add.text(SIDE_X, LIST_Y - 30, 'Runde', { fontFamily: FONT, fontSize: '16px', color: '#d0d8f0' }).setOrigin(0.5);
-    ROUND_OPTIONS.forEach((rounds, i) => {
-      const x = SIDE_X + (i - 1) * 64;
-      this.roundButtons.push(
-        new TextButton(this, x, LIST_Y + 10, String(rounds), () => this.transport.send({ type: 'rounds', rounds }), 'secondary', 20),
-      );
-    });
-    this.addBotButton = new TextButton(this, SIDE_X - 54, LIST_Y + 80, '+Bot', () => this.transport.send({ type: 'addBot' }));
-    this.removeBotButton = new TextButton(this, SIDE_X + 54, LIST_Y + 80, '-Bot', () => this.transport.send({ type: 'removeBot' }));
-    this.startButton = new TextButton(this, SIDE_X, LIST_Y + 160, 'Start', () => this.transport.send({ type: 'start' }), 'primary', 26);
-    this.hint = this.add
-      .text(SIDE_X, LIST_Y + 214, '', { fontFamily: FONT, fontSize: '14px', color: '#9aa6c8', align: 'center', wordWrap: { width: 300 } })
-      .setOrigin(0.5, 0);
-    new TextButton(this, SIDE_X, GAME_H - 50, 'Ieși din joc', () => this.leave(), 'secondary', 14);
-
     const rules = [
-      `Punctaj: ultimul în viață +${POINTS_ROUND_WIN} · kill +${POINTS_KILL}`,
-      `         propria petardă ${POINTS_SUICIDE}`,
+      `Punctaj: ultimul în viață +${POINTS_ROUND_WIN} · kill +${POINTS_KILL} · propria petardă ${POINTS_SUICIDE}`,
       'Lanț de petarde: kill-ul e al celui care l-a aprins.',
     ];
-    this.add
-      .text(LIST_X - 20, LIST_Y + MAX_PLAYERS * ROW_H - 16, rules.join('\n'), {
-        fontFamily: FONT,
-        fontSize: '13px',
-        color: '#9aa6c8',
-        lineSpacing: 4,
-      })
-      .setOrigin(0, 0);
-    this.banner = new ConnectionBanner(this);
+    return el('div', { class: 'lobby-players' }, [this.countText, list, el('p', { class: 'rules', text: rules.join('\n') })]);
+  }
+
+  private createSide(): HTMLElement {
+    this.roundButtons = ROUND_OPTIONS.map((rounds) => {
+      const b = button(String(rounds), () => this.transport.send({ type: 'rounds', rounds }));
+      b.classList.add('round-btn');
+      return b;
+    });
+    this.addBotButton = button('+Bot', () => this.transport.send({ type: 'addBot' }));
+    this.removeBotButton = button('-Bot', () => this.transport.send({ type: 'removeBot' }));
+    this.startButton = button('Start', () => this.transport.send({ type: 'start' }), 'primary', 'medium');
+    this.hint = el('div', { class: 'hint' });
+    const leave = button('Ieși din joc', () => this.leave(), 'secondary', 'small');
+    return el('div', { class: 'lobby-side' }, [
+      el('div', { class: 'label', text: 'Runde' }),
+      el('div', { class: 'btn-row' }, this.roundButtons),
+      el('div', { class: 'btn-row' }, [this.addBotButton, this.removeBotButton]),
+      this.startButton,
+      this.hint,
+      el('div', { class: 'btn-row' }, [isTouch ? button('Setări', () => openSettings(), 'secondary', 'small') : null, leave]),
+    ]);
   }
 
   update(time: number, delta: number): void {
     if (!this.banner.update(this.transport, time)) return;
     this.transport.update(delta);
-    notifyPresence(this.game, this.transport);
+    notifyPresence(this.transport);
     const state = this.transport.getState();
     if (state.phase !== 'lobby') {
       const data: GameSceneData = { transport: this.transport, debug: false, quick: false };
@@ -144,19 +144,21 @@ export class LobbyScene extends Phaser.Scene {
 
   private syncPlayers(state: Readonly<GameState>): void {
     const players = sortedPlayers(state);
-    this.countText.setText(`Jucători ${players.length}/${MAX_PLAYERS}`);
+    setText(this.countText, `Jucători ${players.length}/${MAX_PLAYERS}`);
     this.rows.forEach((row, i) => {
       const p = players[i];
-      row.avatar.setVisible(!!p);
-      row.crown.setVisible(!!p && p.id === state.hostId);
+      row.avatar.style.visibility = p ? 'visible' : 'hidden';
+      show(row.crown, !!p && p.id === state.hostId);
+      row.row.classList.toggle('empty', !p);
+      row.row.classList.toggle('away', !!p && !p.connected);
       if (!p) {
-        row.name.setText('loc liber').setColor('#4f5a78');
+        setText(row.name, 'loc liber');
         return;
       }
-      row.avatar.setTexture(TEX.player(p.slot));
+      const src = avatarUrl(this.game, p.slot);
+      if (row.avatar.getAttribute('src') !== src) row.avatar.src = src;
       const tag = p.id === this.transport.playerId ? ' (tu)' : p.isBot ? ' · bot' : '';
-      row.name.setText(p.name + tag).setColor(p.connected ? '#ffffff' : '#7f8bb0');
-      row.crown.x = row.name.x + row.name.width + 8;
+      setText(row.name, p.name + tag);
     });
   }
 
@@ -164,25 +166,40 @@ export class LobbyScene extends Phaser.Scene {
     const me = this.transport.playerId;
     const isHost = state.hostId === me;
     ROUND_OPTIONS.forEach((rounds, i) => {
-      this.roundButtons[i]!.setVariant(state.roundsTotal === rounds ? 'primary' : 'secondary').setEnabled(isHost || state.roundsTotal === rounds);
+      const b = this.roundButtons[i]!;
+      setButtonStyle(b, state.roundsTotal === rounds ? 'primary' : 'secondary');
+      b.disabled = !isHost && state.roundsTotal !== rounds;
     });
     const players = Object.values(state.players);
-    this.addBotButton.setVisible(isHost).setEnabled(players.length < MAX_PLAYERS);
-    this.removeBotButton.setVisible(isHost).setEnabled(players.some((p) => p.isBot));
-    this.startButton.setVisible(isHost).setEnabled(canStart(state, me));
-    if (!isHost) this.hint.setText('Așteaptă ca hostul să pornească meciul.');
-    else if (players.length < MIN_PLAYERS_TO_START) this.hint.setText(`Minim ${MIN_PLAYERS_TO_START} jucători pentru Start.`);
-    else this.hint.setText('');
+    show(this.addBotButton, isHost);
+    this.addBotButton.disabled = players.length >= MAX_PLAYERS;
+    show(this.removeBotButton, isHost);
+    this.removeBotButton.disabled = !players.some((p) => p.isBot);
+    show(this.startButton, isHost);
+    this.startButton.disabled = !canStart(state, me);
+    if (!isHost) setText(this.hint, 'Așteaptă ca hostul să pornească meciul.');
+    else if (players.length < MIN_PLAYERS_TO_START) setText(this.hint, `Minim ${MIN_PLAYERS_TO_START} jucători pentru Start.`);
+    else setText(this.hint, '');
   }
 
-  private async copyLink(): Promise<void> {
+  private async share(): Promise<void> {
     const url = new URL(window.location.href);
-    url.search = `?room=${this.transport.getState().code}`;
+    const code = this.transport.getState().code;
+    url.search = `?room=${code}`;
     url.hash = '';
+    if (isTouch && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Bombe și Petarde', text: `Hai la bombe! Intră în jocul meu (cod ${code}):`, url: url.toString() });
+        return;
+      } catch (err) {
+        // Closing the share sheet is a choice, not a failure; anything else falls back to copying.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+      }
+    }
     const ok = await copyText(url.toString());
-    this.copyButton.setText(ok ? 'Copiat!' : 'Nu s-a putut copia');
+    this.shareButton.textContent = ok ? 'Copiat!' : 'Nu s-a putut copia';
     this.copyReset?.remove();
-    this.copyReset = this.time.delayedCall(COPIED_MS, () => this.copyButton.setText('Copiază link'));
+    this.copyReset = this.time.delayedCall(COPIED_MS, () => (this.shareButton.textContent = SHARE_LABEL));
   }
 
   /** For good, no confirmation: the seat is freed at once and a reload does not come back. */
@@ -190,6 +207,17 @@ export class LobbyScene extends Phaser.Scene {
     this.transport.dispose();
     this.scene.start('menu', {});
   }
+}
+
+const avatars = new Map<number, string>();
+
+function avatarUrl(game: Phaser.Game, slot: number): string {
+  let url = avatars.get(slot);
+  if (!url) {
+    url = textureUrl(game, TEX.player(slot));
+    avatars.set(slot, url);
+  }
+  return url;
 }
 
 async function copyText(text: string): Promise<boolean> {

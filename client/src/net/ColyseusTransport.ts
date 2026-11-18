@@ -42,6 +42,8 @@ interface RemoteState {
 
 /** Events normally wait for their tick's patch; a patch that never comes must not hold them forever. */
 const MAX_EVENT_WAIT_MS = 500;
+/** Effects of events this old are past (the tab was in the background): they are dropped, not replayed at once. */
+const STALE_EVENT_MS = 2000;
 const LOST_MESSAGE = 'Conexiunea cu serverul s-a pierdut.';
 /** Retries back off 0.2 s, 0.4 s ... up to 5 s: about 20 s in all, past the server's 15 s window. */
 const RECONNECT_RETRIES = 8;
@@ -161,7 +163,7 @@ export class ColyseusTransport implements GameTransport {
       const next = this.queued[0]!;
       if (next.tick > this.state.tick && now - next.at < MAX_EVENT_WAIT_MS) break;
       this.queued.shift();
-      ready = ready.concat(next.events);
+      if (now - next.at < STALE_EVENT_MS) ready = ready.concat(next.events);
     }
     if (ready.length > 0) for (const cb of this.listeners) cb(ready);
   }

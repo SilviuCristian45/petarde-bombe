@@ -9,8 +9,10 @@ import { TextButton } from './TextButton';
 // End of the match: the top three climb onto a 2-1-3 podium one after the other (third,
 // second, then the winner with fireworks in their color), then the full table and the awards.
 
+/** The layout is drawn for 960 px; a wider (touch) canvas keeps it centered. */
+const OFFSET_X = (GAME_W - 960) / 2;
 const BASE_Y = 300;
-const PODIUM_CX = 230;
+const PODIUM_CX = 230 + OFFSET_X;
 const STEP_W = 104;
 /** Index = place - 1: x offset from PODIUM_CX and step height. */
 const STEPS = [
@@ -22,7 +24,7 @@ const RISE_MS = 650;
 /** Third place starts, then second, then first. */
 const RISE_DELAYS = [2000, 1100, 300];
 const TABLE_DELAY = 3000;
-const TABLE_X = GAME_W - TABLE_W - 30;
+const TABLE_X = GAME_W - OFFSET_X - TABLE_W - 30;
 const TABLE_Y = 92;
 
 const AWARD_TEXT: Record<AwardId, { title: string; detail: (n: number) => string }> = {

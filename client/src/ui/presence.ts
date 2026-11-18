@@ -1,8 +1,6 @@
-import type Phaser from 'phaser';
 import { PLAYER_COLORS, type GameState } from '@petarde/shared';
 import type { GameTransport } from '../net/GameTransport';
-import { showToast } from '../scenes/UiScene';
-import type { ToastOptions } from './Toasts';
+import { showToast, type ToastOptions } from './Toasts';
 
 // Toasts about the other people in the room (joined, left, dropped, back, new host), worked out
 // by comparing each state with the previous one. Bots come and go by the host's hand: no toasts.
@@ -24,12 +22,12 @@ interface Snapshot {
 const snapshots = new WeakMap<GameTransport, Snapshot>();
 
 /** Called by the lobby and game scenes every frame, after transport.update(). */
-export function notifyPresence(game: Phaser.Game, transport: GameTransport): void {
+export function notifyPresence(transport: GameTransport): void {
   const next = snapshot(transport.getState());
   const prev = snapshots.get(transport);
   snapshots.set(transport, next);
   // The first look at a room (joining, resuming) has nothing to compare with.
-  if (prev) for (const toast of presenceToasts(prev, next, transport.playerId)) showToast(game, toast);
+  if (prev) for (const toast of presenceToasts(prev, next, transport.playerId)) showToast(toast);
 }
 
 function snapshot(state: Readonly<GameState>): Snapshot {

@@ -14,6 +14,9 @@ export class TextButton extends Phaser.GameObjects.Text {
   private variant: ButtonVariant;
   private enabled = true;
   private hovered = false;
+  /** setWidth: the button keeps this width (label centered), whatever its text. */
+  private wantedWidth = 0;
+  private padY = 8;
 
   constructor(
     scene: Phaser.Scene,
@@ -41,6 +44,25 @@ export class TextButton extends Phaser.GameObjects.Text {
     this.enabled = enabled;
     if (this.input) this.input.cursor = enabled ? 'pointer' : 'default';
     return this.refresh();
+  }
+
+  /** A fixed-width button (e.g. a column of equal touch buttons), `padY` above and below the label. */
+  setWidth(width: number, padY: number): this {
+    this.wantedWidth = width;
+    this.padY = padY;
+    return this.fit();
+  }
+
+  override setText(value: string | string[]): this {
+    if (value === this.text) return this;
+    super.setText(value);
+    // Called by the Text constructor too, before the fields above exist.
+    return this.wantedWidth ? this.fit() : this;
+  }
+
+  private fit(): this {
+    this.setPadding(0, this.padY);
+    return this.setPadding(Math.max(0, (this.wantedWidth - this.width) / 2), this.padY);
   }
 
   setVariant(variant: ButtonVariant): this {

@@ -2,10 +2,15 @@
 <html lang="ro">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Bombe și Petarde</title>
     <meta name="description" content="Joc multiplayer de Revelion în browser: aruncă-i în aer pe prieteni cu petarde. Până la 6 jucători, intri cu un cod." />
     <meta name="theme-color" content="#0b1026" />
+    <!-- Added to the home screen (iPhone has no fullscreen in Safari): opens without browser bars. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Petarde" />
     <!-- Link previews (WhatsApp, Messenger, Discord, X); the absolute domain comes from SITE_URL in vite.config.ts. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Bombe și Petarde" />
@@ -27,29 +32,12 @@
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
     <style>
+      /* Before the stylesheet arrives: no white flash. The rest is in src/style.css. */
       html, body { margin: 0; height: 100%; background: #0b1026; overflow: hidden; }
-      #game { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-      .field {
-        box-sizing: border-box; font: 20px monospace; text-align: center; padding: 8px 12px;
-        color: #eaf2ff; background: #13203d; border: 2px solid #31497a; border-radius: 6px; outline: none;
-      }
-      .field:focus { border-color: #ffe066; }
-      .field.invalid { border-color: #ff6b81; }
-      .field.code { text-transform: uppercase; letter-spacing: 4px; font-size: 24px; }
-      .field::placeholder { color: #4f5a78; letter-spacing: normal; }
-      .field.big { width: 380px; font-size: 30px; padding: 12px 16px; }
-      .field:disabled { opacity: 0.5; }
-      .code-boxes { display: flex; gap: 8px; }
-      .field.code-box { width: 48px; height: 60px; padding: 0; font-size: 32px; text-transform: uppercase; }
-      .field.code-box.invalid { animation: shake 0.3s; }
-      @keyframes shake {
-        25% { transform: translateX(-4px); }
-        75% { transform: translateX(4px); }
-      }
     </style>
   </head>
   <body>
-    <div id="game"></div>
+    <div id="game"><div id="stage"></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

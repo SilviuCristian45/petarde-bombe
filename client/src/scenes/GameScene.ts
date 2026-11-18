@@ -20,8 +20,12 @@ import {
 } from '@petarde/shared';
 import { playSfx } from '../audio/sfx';
 import { DebugOverlay } from '../debug/DebugOverlay';
+import { isTouch } from '../device';
+import { keepScreenOn, vibrate } from '../device-apis';
+import { CombinedInput } from '../input/CombinedInput';
 import type { InputSource } from '../input/InputSource';
 import { KeyboardInput } from '../input/KeyboardInput';
+import { TouchInput } from '../input/TouchInput';
 import type { GameTransport } from '../net/GameTransport';
 import {
   BOARD_H,
@@ -33,15 +37,21 @@ import {
   FONT,
   HUD_W,
   HUD_X,
+  SIDE_W,
   subToScreenX,
   subToScreenY,
   TILE,
+  TOUCH_LAYOUT,
 } from '../render/layout';
 import { addSnow, burst } from '../render/fx';
 import { addGarlands } from '../render/garlands';
 import { ensureTextures, TEX } from '../render/textures';
+import { getSetting } from '../settings';
 import { load, save } from '../storage';
 import { ConnectionBanner } from '../ui/ConnectionBanner';
+import { textureUrl, useScaleMode } from '../ui/dom';
+import { fullscreenOnFirstTap } from '../ui/fullscreen';
+import { requireLandscape } from '../ui/orientation';
 import { Podium } from '../ui/Podium';
 import { notifyPresence } from '../ui/presence';
 import { StandingsTable, TABLE_H, TABLE_W } from '../ui/StandingsTable';
@@ -98,6 +108,12 @@ const DEATH_EFFECT_MS = 1400;
 const SCORE_POPUP_MS = 1600;
 const CONTROLS_HINT_MS = 6000;
 const CONTROLS_HINT_KEY = 'controlsHintSeen';
+/** Touch layout: HUD buttons as wide as a side zone and tall enough for a thumb. */
+const TOUCH_BUTTON_W = SIDE_W - 24;
+const TOUCH_BUTTON_GAP = 12;
+/** Touch layout: the HUD starts below the mute / fullscreen icons. */
+const TOUCH_HUD_TOP = 70;
+const TOUCH_ROW_H = 34;
 
 /** Renders the shared GameState and forwards local input; knows nothing about where the state comes from. */
 export class GameScene extends Phaser.Scene {
@@ -105,6 +121,7 @@ export class GameScene extends Phaser.Scene {
   private debugEnabled = false;
   private quick = false;
   private controls!: InputSource;
+  private touch?: TouchInput;
   private debug?: DebugOverlay;
   private unsubscribe?: () => void;
   private banner!: ConnectionBanner;
@@ -142,7 +159,14 @@ export class GameScene extends Phaser.Scene {
   private standingsParts: Phaser.GameObjects.GameObject[] = [];
   private standings!: StandingsTable;
   private tabKey!: Phaser.Input.Keyboard.Key;
+  /** Touch: the "Clasament" button toggles what a held Tab shows. */
+  private standingsToggled = false;
+  private standingsButton?: TextButton;
+  private pauseButton?: TextButton;
   private podium?: Podium;
+  /** Touch layout, left-handed: HUD on the left, buttons on the right. */
+  private hudX = HUD_X;
+  private buttonsX = 10;
 
   constructor() {
     super('game');
@@ -166,11 +190,22 @@ export class GameScene extends Phaser.Scene {
     this.confirmOpen = false;
     this.lastCountdown = -1;
     this.standingsParts = [];
+    this.standingsToggled = false;
+    this.standingsButton = undefined;
+    this.pauseButton = undefined;
+    this.touch = undefined;
     this.podium = undefined;
+    const leftHanded = TOUCH_LAYOUT && getSetting('leftHanded');
+    this.hudX = leftHanded ? 10 : HUD_X;
+    this.buttonsX = leftHanded ? HUD_X : 10;
   }
 
   create(): void {
     ensureTextures(this);
+    useScaleMode(this, Phaser.Scale.FIT);
+    requireLandscape(this);
+    keepScreenOn(this);
+    const disarmFullscreen = fullscreenOnFirstTap();
     const state = this.transport.getState();
     // Seen around the board, behind it.
     addSnow(this, DEPTH.snow);
@@ -213,10 +248,21 @@ export class GameScene extends Phaser.Scene {
     this.createStandingsOverlay();
     this.createLeaveConfirm();
 
-    this.controls = new KeyboardInput(this.input.keyboard!);
-    this.input.keyboard!.on('keydown-P', () => {
-      if (this.transport.pausable) this.transport.setPaused(!this.transport.isPaused());
-    });
+    const keyboard = new KeyboardInput(this.input.keyboard!);
+    if (isTouch) {
+      this.touch = new TouchInput({
+        joystick: getSetting('joystick'),
+        leftHanded: getSetting('leftHanded'),
+        bombIcon: textureUrl(this.game, TEX.bomb),
+      });
+      this.controls = new CombinedInput([keyboard, this.touch]);
+    } else {
+      this.controls = keyboard;
+    }
+    // The left-handed layout keeps the mute / fullscreen icons above the HUD.
+    document.body.classList.toggle('chrome-left', this.hudX < BOARD_X);
+    this.game.events.on(Phaser.Core.Events.HIDDEN, this.onHidden, this);
+    this.input.keyboard!.on('keydown-P', () => this.togglePause());
     this.input.keyboard!.on('keydown-ENTER', () => {
       if (this.canSkipRound()) this.transport.send({ type: 'skipRound' });
       else this.restartMatch();
@@ -233,20 +279,37 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.unsubscribe?.();
       this.controls.destroy();
+      disarmFullscreen();
+      document.body.classList.remove('chrome-left');
+      this.game.events.off(Phaser.Core.Events.HIDDEN, this.onHidden, this);
     });
+  }
+
+  /**
+   * The page went to the background (another app, a locked screen): let go of whatever is held, so
+   * the player does not keep walking; offline the match pauses. Online the room carries on and the
+   * scene picks up again on return.
+   */
+  private onHidden(): void {
+    this.touch?.releaseAll();
+    this.controls.reset();
+    this.transport.send({ type: 'input', action: 'stop' });
+    if (this.transport.pausable) this.transport.setPaused(true);
   }
 
   update(time: number, delta: number): void {
     if (!this.banner.update(this.transport, time)) return;
     for (const action of this.controls.poll()) this.transport.send({ type: 'input', action });
     this.transport.update(delta);
-    notifyPresence(this.game, this.transport);
+    notifyPresence(this.transport);
 
     const state = this.transport.getState();
     if (state.phase === 'lobby') {
       this.scene.start('lobby', { transport: this.transport });
       return;
     }
+    const me = state.players[this.transport.playerId];
+    this.touch?.setVisible(state.phase === 'playing' && !!me?.alive && !this.transport.isPaused());
     if (state.tick !== this.lastTick) {
       this.lastTick = state.tick;
       this.tickAt = time;
@@ -286,6 +349,7 @@ export class GameScene extends Phaser.Scene {
       } else if (e.type === 'bombPlaced') {
         playSfx('petarda');
         playSfx('fitil');
+        if (e.owner === this.transport.playerId) vibrate('bomb');
       } else if (e.type === 'pickup') playSfx('powerup');
       else if (e.type === 'matchEnd') playSfx('la-multi-ani');
       else if (e.type === 'death') {
@@ -344,6 +408,7 @@ export class GameScene extends Phaser.Scene {
     if (e.playerId === this.transport.playerId) {
       this.localDeath = { killerId: e.killerId, suicide: e.suicide, tick: state.tick };
       this.cameras.main.shake(300, 0.012);
+      vibrate('death');
     }
   }
 
@@ -378,6 +443,10 @@ export class GameScene extends Phaser.Scene {
     });
     const ring = this.add.circle(x, y, TILE / 2).setStrokeStyle(3, color).setDepth(DEPTH.effect);
     this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 450, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+  }
+
+  private togglePause(): void {
+    if (this.transport.pausable) this.transport.setPaused(!this.transport.isPaused());
   }
 
   /** Only the host may fast-forward, and only once every human is dead (the server checks it too). */
@@ -460,7 +529,7 @@ export class GameScene extends Phaser.Scene {
       if (!view) {
         const body = this.add.image(0, 0, TEX.player(p.slot));
         const label = this.add
-          .text(0, 0, p.name, { fontFamily: FONT, fontSize: '11px', color: '#ffffff', stroke: '#000000', strokeThickness: 3 })
+          .text(0, 0, p.name, { fontFamily: FONT, fontSize: TOUCH_LAYOUT ? '14px' : '11px', color: '#ffffff', stroke: '#000000', strokeThickness: 3 })
           .setOrigin(0.5, 1)
           .setDepth(DEPTH.label);
         view = { body, label };
@@ -491,6 +560,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHud(): void {
+    if (TOUCH_LAYOUT) {
+      this.createTouchHud();
+      return;
+    }
     this.add.text(HUD_X, BOARD_Y, 'Bombe și\nPetarde', { fontFamily: FONT, fontSize: '20px', color: '#ffe066' });
     this.hudInfo = this.add.text(HUD_X, BOARD_Y + 64, '', {
       fontFamily: FONT,
@@ -520,6 +593,35 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Touch layout: round info and a compact player list in one side zone (above the petard button),
+   * thumb-sized buttons for what the keys do on a desktop in the other (above the D-pad).
+   */
+  private createTouchHud(): void {
+    const x = this.hudX;
+    this.hudInfo = this.add.text(x, TOUCH_HUD_TOP, '', { fontFamily: FONT, fontSize: '18px', color: '#d0d8f0', lineSpacing: 4 });
+    const style = { fontFamily: FONT, fontSize: '18px', color: '#ffffff' };
+    for (let i = 0; i < PLAYER_COLORS.length; i++) {
+      const y = TOUCH_HUD_TOP + 58 + i * TOUCH_ROW_H;
+      const swatch = this.add.rectangle(x + 7, y + 11, 14, 14, 0xffffff).setVisible(false);
+      const name = this.add.text(x + 22, y, '', style);
+      const stats = this.add.text(x + HUD_W, y, '', style).setOrigin(1, 0);
+      const strike = this.add.rectangle(x + 20, y + 11, 1, 2, 0xff6b81).setOrigin(0, 0.5).setVisible(false);
+      this.hudRows.push({ swatch, name, stats, strike });
+    }
+
+    let y = 12;
+    const addButton = (label: string, onClick: () => void): TextButton => {
+      const b = new TextButton(this, this.buttonsX, y, label, onClick, 'secondary', 20).setOrigin(0, 0).setWidth(TOUCH_BUTTON_W, 18);
+      y += b.height + TOUCH_BUTTON_GAP;
+      return b;
+    };
+    // Esc, Tab and P on a desktop. Leaving stays possible over the podium too.
+    addButton('Ieși', () => this.setConfirm(true)).setDepth(DEPTH.leave);
+    this.standingsButton = addButton('Clasament', () => (this.standingsToggled = !this.standingsToggled));
+    if (this.transport.pausable) this.pauseButton = addButton('Pauză', () => this.togglePause());
+  }
+
   private syncHud(state: Readonly<GameState>): void {
     let timer = '';
     if (state.phase === 'playing') {
@@ -528,7 +630,9 @@ export class GameScene extends Phaser.Scene {
       timer = left > 0 ? `Strângere în ${formatTime(left)}` : 'Arena se strânge!';
     }
     const where = this.transport.online ? `Cod: ${state.code}` : 'Joc offline';
-    this.hudInfo.setText([where, `Runda ${Math.max(1, state.round)}/${state.roundsTotal}`, timer].join('\n'));
+    const round = `Runda ${Math.max(1, state.round)}/${state.roundsTotal}`;
+    this.hudInfo.setText((TOUCH_LAYOUT ? [round, timer] : [where, round, timer]).join('\n'));
+    this.syncTouchButtons(state);
 
     const players = sortedPlayers(state);
     // Dead players stay crossed out until the next round starts.
@@ -542,6 +646,15 @@ export class GameScene extends Phaser.Scene {
       row.strike.setVisible(dead);
       if (!p) return;
       row.swatch.setFillStyle(PLAYER_COLORS[p.slot]!).setAlpha(dead ? 0.3 : 1);
+      if (TOUCH_LAYOUT) {
+        // One line per player: the name (yours in yellow) and the points; the rest is under "Clasament".
+        const mine = p.id === this.transport.playerId;
+        const color = dead ? '#5c6680' : mine ? '#ffe066' : p.left || !p.connected ? '#7f8bb0' : '#ffffff';
+        row.name.setText(fit(p.name, 11)).setColor(color);
+        row.stats.setText(`${p.points}p`).setColor(dead ? '#5c6680' : '#ffffff');
+        if (dead) row.strike.setSize(row.name.width + 4, 2);
+        return;
+      }
       const tag = p.id === this.transport.playerId ? ' (tu)' : p.left ? ' (a ieșit)' : !p.connected ? ' (...)' : '';
       const name = p.name + tag;
       row.name.setText(name).setColor(dead ? '#5c6680' : '#ffffff');
@@ -550,11 +663,20 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Touch: the pause button reads "Continuă" while paused; neither it nor "Clasament" is needed on the podium. */
+  private syncTouchButtons(state: Readonly<GameState>): void {
+    const finished = state.phase === 'finished';
+    if (finished) this.standingsToggled = false;
+    this.standingsButton?.setVisible(!finished).setVariant(this.standingsToggled ? 'primary' : 'secondary');
+    const paused = this.transport.isPaused();
+    this.pauseButton?.setVisible(!finished).setText(paused ? 'Continuă' : 'Pauză').setVariant(paused ? 'primary' : 'secondary');
+  }
+
   /** Draws the main banner (pause, round results...). Returns whether it is showing. */
   private syncOverlay(state: Readonly<GameState>): boolean {
     let text = '';
     if (this.transport.isPaused()) {
-      text = 'PAUZĂ\n\nP pentru a continua';
+      text = TOUCH_LAYOUT ? 'PAUZĂ\n\nApasă Continuă' : 'PAUZĂ\n\nP pentru a continua';
     } else if (state.phase === 'intermission') {
       const winner = state.players[state.roundWinner];
       const secs = Math.ceil(state.phaseTimer / TICK_RATE);
@@ -590,7 +712,7 @@ export class GameScene extends Phaser.Scene {
     this.spectatorText = this.add
       .text(cx, BOARD_Y + 8, '', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: TOUCH_LAYOUT ? '18px' : '14px',
         color: '#d0d8f0',
         backgroundColor: '#0b1026cc',
         padding: { x: 10, y: 5 },
@@ -599,12 +721,12 @@ export class GameScene extends Phaser.Scene {
       .setDepth(DEPTH.overlay)
       .setVisible(false);
     this.skipButton = this.add
-      .text(cx, BOARD_Y + 40, 'Enter: sari peste rundă', {
+      .text(cx, BOARD_Y + (TOUCH_LAYOUT ? 48 : 40), TOUCH_LAYOUT ? 'Sari peste rundă' : 'Enter: sari peste rundă', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: TOUCH_LAYOUT ? '22px' : '14px',
         color: '#0b1026',
         backgroundColor: '#ffe066',
-        padding: { x: 10, y: 5 },
+        padding: TOUCH_LAYOUT ? { x: 22, y: 14 } : { x: 10, y: 5 },
       })
       .setOrigin(0.5, 0)
       .setDepth(DEPTH.overlay)
@@ -663,11 +785,13 @@ export class GameScene extends Phaser.Scene {
     this.standings = new StandingsTable(this, cx - TABLE_W / 2, cy - TABLE_H / 2 + 6);
     this.standings.container.setDepth(DEPTH.standings);
     this.standingsParts = [bg, title, this.standings.container];
+    // Touch: opened with the button, closed with it or with a tap on the table.
+    if (TOUCH_LAYOUT) bg.setInteractive().on('pointerdown', () => (this.standingsToggled = false));
     for (const part of this.standingsParts) (part as Phaser.GameObjects.Rectangle).setVisible(false);
   }
 
   private syncStandingsOverlay(state: Readonly<GameState>): void {
-    const show = this.tabKey.isDown && state.phase !== 'finished';
+    const show = (this.tabKey.isDown || this.standingsToggled) && state.phase !== 'finished';
     for (const part of this.standingsParts) (part as Phaser.GameObjects.Rectangle).setVisible(show);
     if (show) this.standings.update(state, this.transport.playerId, state.phase === 'playing' || state.phase === 'intermission');
   }
@@ -687,7 +811,7 @@ export class GameScene extends Phaser.Scene {
       me: this.transport.playerId,
       depth: DEPTH.podium,
       onAgain: () => this.restartMatch(),
-      againLabel: 'Încă un meci (Enter)',
+      againLabel: TOUCH_LAYOUT ? 'Încă un meci' : 'Încă un meci (Enter)',
     });
   }
 
@@ -707,8 +831,10 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(depth);
-    const yes = new TextButton(this, cx - 90, cy + 42, 'Da, ieși', () => this.leaveMatch(), 'secondary', 18).setDepth(depth);
-    const no = new TextButton(this, cx + 90, cy + 42, 'Rămân', () => this.setConfirm(false), 'primary', 18).setDepth(depth);
+    const size = TOUCH_LAYOUT ? 24 : 18;
+    const yes = new TextButton(this, cx - 100, cy + 42, 'Da, ieși', () => this.leaveMatch(), 'secondary', size).setDepth(depth);
+    const no = new TextButton(this, cx + 100, cy + 42, 'Rămân', () => this.setConfirm(false), 'primary', size).setDepth(depth);
+    if (TOUCH_LAYOUT) for (const b of [yes, no]) b.setPadding(22, 14);
     this.confirmParts = [bg, this.confirmText, yes, no];
     this.setConfirm(false);
   }
@@ -741,7 +867,7 @@ export class GameScene extends Phaser.Scene {
     if (load(CONTROLS_HINT_KEY) === '1') return;
     save(CONTROLS_HINT_KEY, '1');
     const hint = this.add
-      .text(BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H - 14, 'Săgeți / WASD = mișcare  ·  Spațiu = petardă', {
+      .text(BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H - 14, controlsHint(), {
         fontFamily: FONT,
         fontSize: '18px',
         color: '#0b1026',
@@ -770,6 +896,17 @@ export class GameScene extends Phaser.Scene {
     const skip = spectating && this.canSkipRound();
     this.skipButton.setVisible(skip);
   }
+}
+
+function controlsHint(): string {
+  if (!isTouch) return 'Săgeți / WASD = mișcare  ·  Spațiu = petardă';
+  return getSetting('leftHanded') ? 'Dreapta = mișcare  ·  Stânga = petardă' : 'Stânga = mișcare  ·  Dreapta = petardă';
+}
+
+/** Cuts a name to `max` characters with an ellipsis. */
+function fit(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join('')}…`;
 }
 
 function standingsLines(state: Readonly<GameState>): string[] {
