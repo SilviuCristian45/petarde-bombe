@@ -84,6 +84,11 @@ export class ColyseusTransport implements GameTransport {
       this.status = 'reconnecting';
     });
     room.onReconnect(() => {
+      // Left while the connection was down: the leave could not reach the server then, so send it now.
+      if (this.disposed) {
+        void room.leave().catch(() => undefined);
+        return;
+      }
       this.status = 'connected';
       hooks.onToken(room.reconnectionToken);
     });
@@ -135,6 +140,7 @@ export class ColyseusTransport implements GameTransport {
     return this.status;
   }
 
+  /** Leaving for good: a consented leave (no 15 s seat) and the token forgotten, so a reload does not rejoin. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

@@ -195,6 +195,44 @@ describe('BombeRoom', () => {
     expect(msg.tick).toBe(game(room).tick);
   });
 
+  it('frees a lobby seat at once when a player leaves', async () => {
+    const { client, room } = await create();
+    const guests: ClientRoom[] = [];
+    for (let i = 1; i < MAX_PLAYERS; i++) guests.push(await join(client.roomId, `P${i}`));
+    expect(await status(client.roomId)).toBe('full');
+
+    await guests[0]!.leave();
+    await room.waitForNextTimestep();
+    expect(game(room).players[guests[0]!.sessionId]).toBeUndefined();
+    await room.waitForNextPatch();
+    expect(room.state.players.has(guests[0]!.sessionId)).toBe(false);
+    expect(await status(client.roomId)).toBe('open');
+    await join(client.roomId, 'Eva');
+    expect(Object.keys(game(room).players)).toHaveLength(MAX_PLAYERS);
+  });
+
+  it('keeps a player who left mid-match as "left" only until the lobby', async () => {
+    const { client, room } = await create();
+    const guest = await join(client.roomId);
+    await send(client, room, 'addBot');
+    await send(client, room, 'start');
+    const guestId = guest.sessionId;
+    await guest.leave();
+    await room.waitForNextTimestep();
+    expect(game(room).players[guestId]).toMatchObject({ left: true, connected: false, alive: false });
+
+    game(room).phase = 'finished';
+    await room.waitForNextPatch();
+    expect(room.state.players.get(guestId)?.left).toBe(true); // still in this match's standings
+
+    await send(client, room, 'lobby');
+    expect(game(room).phase).toBe('lobby');
+    expect(game(room).players[guestId]).toBeUndefined();
+    await room.waitForNextPatch();
+    expect(room.state.players.has(guestId)).toBe(false);
+    expect(Object.keys(game(room).players)).toHaveLength(2);
+  });
+
   it('keeps a dropped player for reconnection', async () => {
     const { client, room } = await create();
     const guest = await join(client.roomId);
