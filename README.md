@@ -24,6 +24,10 @@ Se joacă la **https://bombe-petarde.duckdns.org**. Phaser 3 + TypeScript + Vite
    kill-ul e al celui care l-a aprins. Dacă mor toți deodată, e egalitate.
 6. La final: podium, clasamentul complet și premii (Artificierul, Kamikaze, Supraviețuitorul,
    Spărgătorul de cadouri, Colecționarul). Hostul pornește **Încă un meci** în același room.
+7. **Clasament** (din meniu): top 15 all-time, salvat pe server. Intră doar meciurile online cu cel
+   puțin 2 jucători umani; contează cel mai bun meci al fiecărei porecle (fără diferență de majuscule),
+   ordonat după puncte, apoi victorii, apoi cine l-a făcut primul. Boții și cei ieșiți din meci nu intră.
+   Cine intră în top sau își bate recordul vede „Record nou! Locul X” pe ecranul final.
 
 ### Taste
 
@@ -103,8 +107,8 @@ deploy/   instalare și actualizare pe VPS (vezi deploy/README.md)
   Scenele vorbesc cu jocul doar prin `GameTransport`: `LocalTransport` (simularea în browser, cu boți)
   sau `ColyseusTransport` (room pe server). Grafica e desenată procedural la pornire; particulele au un
   plafon global (`render/fx.ts`), sunetele sunt în `audio/sfx.ts`.
-- **`/server`**: room-ul `bombe` (codul e id-ul room-ului), validare completă pe server, `GET /health`
-  și `GET /rooms/:cod`.
+- **`/server`**: room-ul `bombe` (codul e id-ul room-ului), validare completă pe server, `GET /health`,
+  `GET /rooms/:cod` și `GET /leaderboard` (clasamentul, din SQLite: `node:sqlite`, inclus în Node).
 
 Opțiuni de test din URL: `?debug`, `?bots=1..5` (implicit 3), `?rounds=3|5|7`, `?seed=abc`,
 `?botlevel=usor|mediu|greu` (nivelul boților, implicit mediu),
@@ -119,7 +123,7 @@ Necesită Node ≥ 22.12.
 
 ```bash
 npm install
-npm run dev        # client pe http://localhost:5173 + server Colyseus pe :2567
+npm run dev        # client pe http://localhost:5173 + server Colyseus pe :2567 (clasament în server/data/)
 npm test           # testele din /shared și ale serverului
 npm run typecheck
 npm run build      # client/dist (static) + server/dist/index.js (un singur fișier)
