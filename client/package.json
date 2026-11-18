@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "og": "node assets-src/icons.mjs"
   },
   "dependencies": {
     "@colyseus/sdk": "^0.18.10",
@@ -15,6 +16,7 @@
     "phaser": "3.90.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "vite": "^8.3.8"
   }
 }
