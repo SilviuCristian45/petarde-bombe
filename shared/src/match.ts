@@ -14,7 +14,7 @@ import {
 } from './constants';
 import { cellCenter, generateGrid, spawnPoints } from './grid';
 import { seedFrom } from './rng';
-import type { GameState, PlayerState } from './types';
+import type { GameEvent, GameState, PlayerState } from './types';
 
 export interface CreateOptions {
   code: string;
@@ -56,8 +56,9 @@ export function sortedPlayers(state: GameState): PlayerState[] {
   return Object.values(state.players).sort((a, b) => a.slot - b.slot);
 }
 
+/** Trimmed, at most MAX_NAME_LENGTH characters, without control or invisible formatting characters. */
 export function sanitizeName(name: string): string {
-  const clean = name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, MAX_NAME_LENGTH);
+  const clean = [...name.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, MAX_NAME_LENGTH).join('').trim();
   return clean || 'Jucător';
 }
 
@@ -78,6 +79,7 @@ export function addPlayer(state: GameState, id: string, name: string, isBot = fa
     joinOrder: state.joinCounter++,
     isBot,
     connected: true,
+    left: false,
     alive: false,
     x: 0,
     y: 0,
@@ -119,12 +121,40 @@ export function removeBot(state: GameState, byId: string): boolean {
 export function removePlayer(state: GameState, id: string): void {
   if (!state.players[id]) return;
   delete state.players[id];
-  if (state.hostId === id) {
-    const next = Object.values(state.players)
-      .filter((p) => !p.isBot)
-      .sort((a, b) => a.joinOrder - b.joinOrder)[0];
-    state.hostId = next ? next.id : '';
+  if (state.hostId === id) state.hostId = nextHost(state);
+}
+
+/**
+ * A player gone for good (tab closed, reconnection window expired). In the lobby they are
+ * removed; mid-match they die without crediting anyone and stay in the standings until the
+ * lobby. Returns the death event, if any, so clients can show it.
+ */
+export function leavePlayer(state: GameState, id: string): GameEvent[] {
+  const p = state.players[id];
+  if (!p) return [];
+  if (state.phase === 'lobby') {
+    removePlayer(state, id);
+    return [];
   }
+  const events: GameEvent[] = [];
+  p.left = true;
+  p.connected = false;
+  if (p.alive) {
+    p.alive = false;
+    p.dir = DIR_NONE;
+    p.bombPressed = false;
+    events.push({ type: 'death', playerId: id, killerId: '', suicide: false });
+  }
+  if (state.hostId === id) state.hostId = nextHost(state);
+  return events;
+}
+
+/** The next host: the earliest-joined human still in the room, connected ones first. Never a bot. */
+function nextHost(state: GameState): string {
+  const next = Object.values(state.players)
+    .filter((p) => !p.isBot && !p.left && p.id !== state.hostId)
+    .sort((a, b) => Number(b.connected) - Number(a.connected) || a.joinOrder - b.joinOrder)[0];
+  return next ? next.id : '';
 }
 
 /** Marks a player as temporarily disconnected (they keep their place for reconnection). */
@@ -169,7 +199,10 @@ export function backToLobby(state: GameState, byId: string): boolean {
   state.bombs = [];
   state.flames = [];
   state.powerups = [];
-  for (const p of Object.values(state.players)) p.alive = false;
+  for (const p of Object.values(state.players)) {
+    if (p.left) delete state.players[p.id];
+    else p.alive = false;
+  }
   return true;
 }
 
@@ -192,7 +225,7 @@ export function startRound(state: GameState): void {
   const spawns = spawnPoints(state.width, state.height);
   for (const p of sortedPlayers(state)) {
     const [sx, sy] = spawns[p.slot]!;
-    p.alive = true;
+    p.alive = !p.left;
     p.x = cellCenter(sx);
     p.y = cellCenter(sy);
     p.dir = DIR_NONE;

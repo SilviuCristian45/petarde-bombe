@@ -17,6 +17,7 @@ export interface PlayerState {
   joinOrder: number;
   isBot: boolean;
   connected: boolean;
+  left: boolean; // gone for good mid-match: stays in the standings until the lobby, never respawns
   alive: boolean;
   x: number; // sub-units, center of the player
   y: number;

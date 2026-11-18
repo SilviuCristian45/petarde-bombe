@@ -161,5 +161,7 @@ describe('lobby', () => {
     expect(sanitizeName('x'.repeat(30))).toHaveLength(MAX_NAME_LENGTH);
     expect(sanitizeName('   ')).toBe('Jucător');
     expect(sanitizeName('a\u0007b')).toBe('ab');
+    expect(sanitizeName('a\u0085b​c‮d\n')).toBe('abcd'); // C1 control, zero-width, bidi override
+    expect(sanitizeName('🎆'.repeat(20))).toBe('🎆'.repeat(MAX_NAME_LENGTH)); // never splits an emoji
   });
 });
