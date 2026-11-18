@@ -1,7 +1,19 @@
 import { defineConfig } from 'vite';
 
+/**
+ * Public address of the game, used for the absolute URLs link previews need (og:url, og:image).
+ * Override at build time with SITE_URL=https://... npm run build.
+ */
+const SITE_URL = (process.env.SITE_URL ?? 'https://bombe-petarde.duckdns.org').replace(/\/$/, '');
+
 export default defineConfig({
   base: './',
+  plugins: [
+    {
+      name: 'site-url',
+      transformIndexHtml: (html) => html.replaceAll('%SITE_URL%', SITE_URL),
+    },
+  ],
   build: {
     outDir: 'dist',
     target: 'es2022',

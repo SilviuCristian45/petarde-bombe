@@ -100,6 +100,12 @@ npm run typecheck
 npm run build      # client/dist (static) + server/dist/index.js (un singur fișier)
 ```
 
+Imaginea de preview pentru linkuri (`client/public/og.png`, 1200×630) și iconițele (`favicon.svg`,
+`favicon-32.png`, `apple-touch-icon.png`, `icon-512.png`) sunt desenate din cod în
+`client/assets-src/icons.mjs`; după o modificare: `npm run og`. Domeniul folosit în tag-urile Open Graph
+e `SITE_URL` din `client/vite.config.ts` (implicit https://bombe-petarde.duckdns.org; se poate schimba
+la build cu variabila de mediu `SITE_URL`).
+
 Endpoint-ul serverului se configurează prin `VITE_SERVER_URL` (vezi `client/.env.example`):
 implicit `/colyseus` pe același domeniu, gol = build doar offline.
 

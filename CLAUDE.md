@@ -16,6 +16,7 @@ npm run dev          # client (http://localhost:5173) + server (:2567) together;
 npm test             # vitest for /shared, then the server room tests (@colyseus/testing)
 npm run typecheck    # tsc for shared + client + server
 npm run build        # client/dist (static) + server/dist/index.js (single esbuild bundle)
+npm run og           # regenerate client/public/og.png + favicons from client/assets-src/icons.mjs (resvg)
 ```
 
 Single test file / test name:
