@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { MAX_PLAYERS, sanitizeName } from '@petarde/shared';
 import type { GameTransport } from '../net/GameTransport';
-import { createOfflineRoom, createRoom, joinRoom, onlineEnabled, resumeRoom, RoomError } from '../net/rooms';
-import { FONT, GAME_W } from '../render/layout';
+import { abandonResumableRoom, createOfflineRoom, createRoom, joinRoom, onlineEnabled, resumeRoom, RoomError } from '../net/rooms';
+import { FONT, GAME_H, GAME_W } from '../render/layout';
 import { ensureTextures } from '../render/textures';
+import { reducedEffects, setReducedEffects } from '../settings';
 import { load } from '../storage';
 import { addTitle, drawBackdrop } from '../ui/backdrop';
 import { CodeInput } from '../ui/CodeInput';
@@ -18,6 +19,8 @@ export interface MenuSceneData {
   message?: string;
   /** The tab was reloaded during an online game: reconnect to that room right away. */
   resume?: boolean;
+  /** Opened a link to another room while in this one ('' = code unknown): ask before switching. */
+  switchFrom?: string;
 }
 
 const CX = GAME_W / 2;
@@ -65,9 +68,64 @@ export class MenuScene extends Phaser.Scene {
       onlineEnabled,
     );
 
-    if (this.opts.resume) void this.connect(resumeRoom(), 'Se reconectează la joc...');
+    this.effectsToggle();
+
+    if (this.opts.switchFrom !== undefined && this.opts.invite) this.askSwitch(this.opts.switchFrom, this.opts.invite);
+    else if (this.opts.resume) void this.connect(resumeRoom(), 'Se reconectează la joc...');
     else if (this.opts.invite) this.joinInvite(this.opts.invite);
     else this.codeInput.focus();
+  }
+
+  /** "Efecte reduse": fewer particles and no snow, remembered on this device. */
+  private effectsToggle(): void {
+    const label = () => `Efecte reduse: ${reducedEffects() ? 'da' : 'nu'}`;
+    const button = new TextButton(this, 16, GAME_H - 16, label(), () => {
+      setReducedEffects(!reducedEffects());
+      button.setText(label());
+    }, 'secondary', 12);
+    button.setOrigin(0, 1);
+  }
+
+  /** A link to another room while this tab still has a game: the link wins, once confirmed. */
+  private askSwitch(current: string, invite: string): void {
+    this.codeInput.setVisible(false);
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const close = () => {
+      for (const part of parts) part.destroy();
+      this.codeInput.setVisible(true);
+    };
+    // Blocks the menu underneath until a choice is made.
+    parts.push(this.add.rectangle(CX, GAME_H / 2, GAME_W, GAME_H, 0x0b1026, 0.85).setInteractive());
+    parts.push(this.add.rectangle(CX, 285, 560, 200, 0x13203d).setStrokeStyle(2, 0xffe066));
+    const from = current ? ` (${current})` : '';
+    parts.push(
+      this.add
+        .text(CX, 245, `Ieși din jocul curent${from}\nși intri în ${invite}?`, {
+          fontFamily: FONT,
+          fontSize: '20px',
+          color: '#ffffff',
+          align: 'center',
+          lineSpacing: 6,
+        })
+        .setOrigin(0.5),
+    );
+    parts.push(
+      new TextButton(this, CX - 120, 330, `Da, intru în ${invite}`, () => {
+        close();
+        this.status.setColor('#d0d8f0').setText('Ieși din jocul curent...');
+        void abandonResumableRoom().then(() => this.joinInvite(invite));
+      }, 'primary', 18),
+    );
+    parts.push(
+      new TextButton(this, CX + 130, 330, 'Nu, rămân', () => {
+        close();
+        // Whatever happens, a later reload should not ask again.
+        const url = new URL(window.location.href);
+        url.searchParams.delete('room');
+        window.history.replaceState(null, '', url);
+        void this.connect(resumeRoom(), 'Se reconectează la joc...');
+      }, 'secondary', 18),
+    );
   }
 
   /** "Joci ca {nume} · schimbă" */

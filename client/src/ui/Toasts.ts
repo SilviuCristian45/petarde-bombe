@@ -11,7 +11,7 @@ export interface ToastOptions {
 }
 
 const RIGHT = GAME_W - 10;
-const TOP = 40; // below the mute / fullscreen icons
+const TOP = 66; // below the mute / fullscreen icons and the game panel's title
 const GAP = 6;
 const PAD_X = 10;
 const HEIGHT = 28;

@@ -66,19 +66,36 @@ export async function joinRoom(code: string, name: string): Promise<GameTranspor
   }
 }
 
-/** A reconnection token left by a reload of this tab, if any (the server keeps the seat for 15 s). */
-export function hasResumableRoom(): boolean {
-  return onlineEnabled && loadToken() !== null;
+/**
+ * The code of the room a reload of this tab left behind (the server keeps the seat for 15 s),
+ * '' if the code is unknown, or null if there is nothing to resume.
+ */
+export function resumableRoomCode(): string | null {
+  if (!onlineEnabled) return null;
+  return loadToken()?.code ?? null;
 }
 
 export async function resumeRoom(): Promise<GameTransport> {
-  const token = loadToken();
+  const saved = loadToken();
   saveToken(null);
-  if (!onlineEnabled || !token) throw new RoomError('Nu există un joc de reluat.');
+  if (!onlineEnabled || !saved) throw new RoomError('Nu există un joc de reluat.');
   try {
-    return await connected(getClient().reconnect(token));
+    return await connected(getClient().reconnect(saved.token));
   } catch {
     throw new RoomError('Nu te-ai mai putut reconecta la joc.');
+  }
+}
+
+/** Leaves the room a reload left behind for good (reconnects just to say so); failures are ignored. */
+export async function abandonResumableRoom(): Promise<void> {
+  const saved = loadToken();
+  saveToken(null);
+  if (!onlineEnabled || !saved) return;
+  try {
+    const room = await withTimeout(getClient().reconnect(saved.token));
+    await room.leave(true);
+  } catch {
+    // the seat was already gone, or will be once the 15 s are up
   }
 }
 
@@ -93,7 +110,8 @@ async function connected(pending: Promise<Room>): Promise<GameTransport> {
   if (!hasState(room)) {
     await withTimeout(new Promise<void>((resolve) => room.onStateChange.once(() => resolve())));
   }
-  return new ColyseusTransport(room, { onToken: saveToken });
+  // Room codes are the Colyseus room ids.
+  return new ColyseusTransport(room, { onToken: (token) => saveToken(token ? { token, code: room.roomId } : null) });
 }
 
 function hasState(room: Room): boolean {
@@ -158,17 +176,27 @@ function resolveServerUrl(raw: string): string | null {
   }
 }
 
-function loadToken(): string | null {
+interface SavedToken {
+  token: string;
+  code: string;
+}
+
+function loadToken(): SavedToken | null {
   try {
-    return window.sessionStorage.getItem(TOKEN_KEY);
+    const raw = window.sessionStorage.getItem(TOKEN_KEY);
+    if (!raw) return null;
+    // Older builds stored the bare token.
+    if (!raw.startsWith('{')) return { token: raw, code: '' };
+    const saved = JSON.parse(raw) as Partial<SavedToken>;
+    return typeof saved.token === 'string' ? { token: saved.token, code: String(saved.code ?? '') } : null;
   } catch {
     return null;
   }
 }
 
-function saveToken(token: string | null): void {
+function saveToken(saved: SavedToken | null): void {
   try {
-    if (token) window.sessionStorage.setItem(TOKEN_KEY, token);
+    if (saved) window.sessionStorage.setItem(TOKEN_KEY, JSON.stringify(saved));
     else window.sessionStorage.removeItem(TOKEN_KEY);
   } catch {
     // reloading the tab just won't resume the room

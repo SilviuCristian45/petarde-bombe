@@ -17,6 +17,7 @@ export interface CodeInputHandlers {
  */
 export class CodeInput {
   readonly boxes: HTMLInputElement[] = [];
+  private readonly element: Phaser.GameObjects.DOMElement;
 
   constructor(
     scene: Phaser.Scene,
@@ -41,7 +42,12 @@ export class CodeInput {
       wrap.appendChild(box);
       this.boxes.push(box);
     }
-    scene.add.dom(x, y, wrap).setOrigin(0.5);
+    this.element = scene.add.dom(x, y, wrap).setOrigin(0.5);
+  }
+
+  /** DOM elements draw above the canvas, so a dialog on the canvas has to hide them. */
+  setVisible(visible: boolean): void {
+    this.element.setVisible(visible);
   }
 
   get code(): string {
