@@ -14,7 +14,9 @@ import {
   MSG_EVENTS,
   removeBot,
   runTick,
+  setBotLevel,
   setConnected,
+  setDefaultBotLevel,
   setRounds,
   skipBotRound,
   startMatch,
@@ -77,6 +79,15 @@ export class BombeRoom extends Room<{ state: RoomState }> {
     });
     this.onMessage('removeBot', (client) => {
       removeBot(this.game, client.sessionId);
+    });
+    // Levels are validated (host, lobby, known level, a bot) by the shared functions.
+    this.onMessage('botLevel', (client, msg: { level?: unknown }) => {
+      if (typeof msg?.level === 'number') setDefaultBotLevel(this.game, client.sessionId, msg.level);
+    });
+    this.onMessage('setBotLevel', (client, msg: { botId?: unknown; level?: unknown }) => {
+      if (typeof msg?.botId === 'string' && typeof msg.level === 'number') {
+        setBotLevel(this.game, client.sessionId, msg.botId, msg.level);
+      }
     });
     this.onMessage('start', async (client) => {
       if (startMatch(this.game, client.sessionId)) await this.lock();

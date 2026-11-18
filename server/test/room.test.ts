@@ -1,6 +1,9 @@
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import type { Room as ClientRoom } from '@colyseus/sdk';
 import {
+  BOT_EASY,
+  BOT_HARD,
+  BOT_MEDIUM,
   ERR_ROOM_FULL,
   ERR_SERVER_FULL,
   isValidRoomCode,
@@ -231,6 +234,39 @@ describe('BombeRoom', () => {
     await room.waitForNextPatch();
     expect(room.state.players.has(guestId)).toBe(false);
     expect(Object.keys(game(room).players)).toHaveLength(2);
+  });
+
+  it('lets only the host set bot levels, only in the lobby, only to valid values', async () => {
+    const { client, room } = await create();
+    const guest = await join(client.roomId);
+    await send(client, room, 'addBot');
+    const botId = Object.values(game(room).players).find((p) => p.isBot)!.id;
+    expect(game(room).players[botId]!.botLevel).toBe(BOT_MEDIUM);
+    const guestLevel = game(room).players[guest.sessionId]!.botLevel;
+
+    await send(guest, room, 'botLevel', { level: BOT_HARD });
+    await send(guest, room, 'setBotLevel', { botId, level: BOT_HARD });
+    await send(client, room, 'botLevel', { level: 7 });
+    await send(client, room, 'setBotLevel', { botId, level: '2' });
+    await send(client, room, 'setBotLevel', { botId: guest.sessionId, level: BOT_EASY });
+    expect(game(room).botLevel).toBe(BOT_MEDIUM);
+    expect(game(room).players[botId]!.botLevel).toBe(BOT_MEDIUM);
+    expect(game(room).players[guest.sessionId]!.botLevel).toBe(guestLevel);
+
+    await send(client, room, 'botLevel', { level: BOT_EASY });
+    await send(client, room, 'setBotLevel', { botId, level: BOT_HARD });
+    await send(client, room, 'addBot');
+    expect(game(room).botLevel).toBe(BOT_EASY);
+    expect(game(room).players[botId]!.botLevel).toBe(BOT_HARD);
+    const second = Object.values(game(room).players).find((p) => p.isBot && p.id !== botId)!;
+    expect(second.botLevel).toBe(BOT_EASY);
+    await room.waitForNextPatch();
+    expect(room.state.botLevel).toBe(BOT_EASY);
+    expect(room.state.players.get(botId)?.botLevel).toBe(BOT_HARD);
+
+    await send(client, room, 'start');
+    await send(client, room, 'setBotLevel', { botId, level: BOT_EASY });
+    expect(game(room).players[botId]!.botLevel).toBe(BOT_HARD);
   });
 
   it('mirrors the match statistics used by the end-of-match awards', async () => {

@@ -43,7 +43,8 @@ Variabile de mediu: `PORT` (implicit 2567), `HOST` (implicit `127.0.0.1`, doar l
   - input-urile sunt acceptate doar în faza `playing`, doar acțiuni cunoscute, maxim 30/s (restul ignorate);
     peste 60 de mesaje/s clientul e deconectat;
   - nickname curățat (`sanitizeName`: trim, max 16, fără caractere de control/invizibile);
-  - doar hostul: Start, runde, +Bot/-Bot (doar în lobby), întoarcerea în lobby, `skipRound`
+  - doar hostul: Start, runde, +Bot/-Bot și nivelul boților (`botLevel`, `setBotLevel`: doar în
+    lobby, doar valori 0..2, doar pe boți), întoarcerea în lobby, `skipRound`
     (doar când toți oamenii sunt morți, `onlyBotsAlive`). Hostul care pleacă e înlocuit de următorul
     om (conectat), niciodată de un bot.
 - Reconectare: la o cădere (`onDrop`) jucătorul rămâne pe loc 15 s (`allowReconnection`), marcat

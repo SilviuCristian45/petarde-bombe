@@ -6,6 +6,8 @@ import {
   generateRoomCode,
   removeBot,
   runTick,
+  setBotLevel,
+  setDefaultBotLevel,
   setRounds,
   skipBotRound,
   startMatch,
@@ -19,6 +21,8 @@ import type { ClientMessage, ConnectionStatus, GameTransport } from './GameTrans
 export interface LocalOptions {
   name: string;
   bots: number;
+  /** Level of the bots added at the start (BOT_EASY..BOT_HARD); the room default otherwise. */
+  botLevel?: number;
   rounds: number;
   seed: string;
   /** Start round 1 right away (debug URL options) instead of waiting in the lobby. */
@@ -43,6 +47,7 @@ export class LocalTransport implements GameTransport {
   constructor(opts: LocalOptions) {
     this.state = createGameState({ code: generateRoomCode(Math.random), seed: opts.seed });
     addPlayer(this.state, this.playerId, opts.name);
+    if (opts.botLevel !== undefined) setDefaultBotLevel(this.state, this.playerId, opts.botLevel);
     for (let i = 0; i < opts.bots; i++) this.addBot();
     setRounds(this.state, this.playerId, opts.rounds);
     if (opts.autoStart) startMatch(this.state, this.playerId);
@@ -57,6 +62,8 @@ export class LocalTransport implements GameTransport {
     else if (msg.type === 'rounds') setRounds(this.state, this.playerId, msg.rounds);
     else if (msg.type === 'addBot') this.addBot();
     else if (msg.type === 'removeBot') removeBot(this.state, this.playerId);
+    else if (msg.type === 'botLevel') setDefaultBotLevel(this.state, this.playerId, msg.level);
+    else if (msg.type === 'setBotLevel') setBotLevel(this.state, this.playerId, msg.botId, msg.level);
     else if (msg.type === 'start') startMatch(this.state, this.playerId);
     else if (msg.type === 'lobby') backToLobby(this.state, this.playerId);
     else if (msg.type === 'skipRound') this.skipRound();

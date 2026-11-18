@@ -24,6 +24,7 @@ interface RemoteState {
   phase: string;
   hostId: string;
   roundsTotal: number;
+  botLevel: number;
   round: number;
   tick: number;
   roundTick: number;
@@ -179,6 +180,7 @@ function toGameState(r: RemoteState): GameState {
     phase: (r.phase || 'lobby') as Phase,
     hostId: r.hostId,
     roundsTotal: r.roundsTotal,
+    botLevel: r.botLevel,
     round: r.round,
     tick: r.tick,
     roundTick: r.roundTick,
@@ -207,6 +209,7 @@ function pick(p: Omit<PlayerState, 'bombPressed'>): Omit<PlayerState, 'bombPress
     slot: p.slot,
     joinOrder: p.joinOrder,
     isBot: p.isBot,
+    botLevel: p.botLevel,
     connected: p.connected,
     left: p.left,
     alive: p.alive,
