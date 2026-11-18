@@ -29,10 +29,27 @@ $tar = Join-Path $env:SystemRoot 'System32\tar.exe'   # bsdtar din Windows 10+
 if ($Key -and -not (Test-Path $Key)) { throw "Nu găsesc cheia $Key" }
 if ($Key -and -not $User) { $User = 'ubuntu' }   # ca la tren, când cheia se dă explicit
 $target = if ($User) { "$User@$Server" } else { $Server }
-$sshOpts = @('-o', 'StrictHostKeyChecking=accept-new')
+# BatchMode: no hidden password/passphrase prompt; the timeouts turn a dead connection into an error.
+$sshOpts = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=3')
 if ($Key) { $sshOpts = @('-i', $Key) + $sshOpts }
 
 function Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
+
+# The command about to run, as it would be typed.
+function Show-Command([string]$Line) { Write-Host "    > $Line" -ForegroundColor DarkGray }
+
+# ssh with stdin closed (-n). Without it, Windows OpenSSH launched from a script whose output PowerShell
+# captures keeps reading the console after the remote command has ended, and never exits.
+function Invoke-Ssh([string]$Remote) {
+  Show-Command "ssh -n $($sshOpts -join ' ') $target `"$Remote`""
+  & ssh -n @sshOpts $target $Remote
+}
+
+# scp with stdin closed too (an empty pipe), for the same reason.
+function Invoke-Scp([string[]]$Files, [string]$Destination) {
+  Show-Command "scp $($sshOpts -join ' ') $($Files -join ' ') $Destination"
+  $null | & scp @sshOpts @Files $Destination
+}
 
 # Rulează o comandă externă și se oprește dacă iese cu cod nenul. Doar codul de ieșire contează:
 # Vite, npm și ssh scriu și mesaje normale pe stderr, pe care PowerShell 5.1 le-ar trata ca erori.
@@ -76,10 +93,13 @@ try {
 
   if (-not $Rollback) {
     Step 'Teste'
+    Show-Command 'npm test'
     Invoke-Checked 'npm test' { npm.cmd test }
     Step 'Typecheck'
+    Show-Command 'npm run typecheck'
     Invoke-Checked 'npm run typecheck' { npm.cmd run typecheck }
     Step 'Build de producție'
+    Show-Command 'npm run build'
     Invoke-Checked 'npm run build' { npm.cmd run build }
 
     Step 'Arhivez server/dist/index.js și client/dist'
@@ -91,6 +111,7 @@ try {
     $version = "$(git rev-parse --short HEAD)$(if ($dirty.Count -gt 0) { '-dirty' }) $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     [IO.File]::WriteAllText((Join-Path $stage 'VERSION'), "$version`n", (New-Object Text.UTF8Encoding $false))
     $archive = Join-Path $work 'release.tar.gz'
+    Show-Command "tar -czf $archive -C $stage ."
     Invoke-Checked 'tar' { & $tar -czf $archive -C $stage . }
     $upload += $archive
     Write-Host ("   {0} ({1:N2} MB), versiunea {2}" -f $archive, ((Get-Item $archive).Length / 1MB), $version)
@@ -101,34 +122,36 @@ try {
   $cleanup = "rm -rf $remoteDir"
   $action = if ($Rollback) { 'revin la versiunea anterioară a bombe' } else { "public versiunea $version și repornesc bombe" }
   if (-not $PSCmdlet.ShouldProcess($target, $action)) {
-    Write-Host "ssh $($sshOpts -join ' ') $target `"$prepare`""
+    Write-Host "ssh -n $($sshOpts -join ' ') $target `"$prepare`""
     Write-Host "scp $($sshOpts -join ' ') $($upload -join ' ') ${target}:$remoteDir/"
-    Write-Host "ssh $($sshOpts -join ' ') $target `"$run`""
+    Write-Host "ssh -n $($sshOpts -join ' ') $target `"$run`""
     Write-Host "verific $publicHealth$(if (-not $Rollback) { ' (dacă pică: rollback automat)' })"
-    Write-Host "ssh $($sshOpts -join ' ') $target `"$cleanup`""
+    Write-Host "ssh -n $($sshOpts -join ' ') $target `"$cleanup`""
     return
   }
 
   Step "Copiez pe $target"
-  Invoke-Checked 'ssh' { ssh @sshOpts $target $prepare }
-  Invoke-Checked 'scp' { scp @sshOpts @upload "${target}:$remoteDir/" }
+  Invoke-Checked 'ssh (pregătire)' { Invoke-Ssh $prepare }
+  Invoke-Checked 'scp' { Invoke-Scp $upload "${target}:$remoteDir/" }
 
   Step $(if ($Rollback) { 'Revin la versiunea anterioară' } else { 'Instalez și repornesc serviciul' })
   $ErrorActionPreference = 'Continue'   # de aici, doar codurile de ieșire ale ssh decid
-  & ssh @sshOpts $target $run
+  Invoke-Ssh $run
   $code = $LASTEXITCODE
   if ($code -eq 3) { throw 'Serverul nu a pornit sănătos; a revenit automat la versiunea anterioară. Vezi: ssh oracle journalctl -u bombe -n 50' }
   if ($code) { throw "Actualizarea pe server a eșuat (cod $code). Vezi: ssh oracle journalctl -u bombe -n 50" }
 
   Step "Verific $publicHealth"
+  Show-Command "Invoke-WebRequest $publicHealth (până la 10 încercări)"
   if (-not (Test-PublicHealth)) {
     if ($Rollback) { throw 'Health check-ul public pică și după rollback: verifică Caddy și DNS-ul.' }
     Write-Warning 'Health check-ul public a eșuat: revin la versiunea anterioară.'
-    & ssh @sshOpts $target "bash $remoteDir/remote-update.sh rollback"
-    & ssh @sshOpts $target $cleanup
+    Invoke-Ssh "bash $remoteDir/remote-update.sh rollback"
+    Invoke-Ssh $cleanup
     throw 'Am revenit la versiunea anterioară. Dacă e primul deploy, verifică DNS-ul, porturile 80/443 și Caddy.'
   }
-  & ssh @sshOpts $target $cleanup
+  Step 'Curăț fișierele temporare de pe server'
+  Invoke-Ssh $cleanup
   Step 'Gata.'
 } finally {
   Pop-Location
