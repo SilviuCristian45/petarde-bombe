@@ -15,11 +15,19 @@ Se joacă la **https://bombe-petarde.duckdns.org**. Phaser 3 + TypeScript + Vite
 2. În lobby, hostul (cu coroniță) alege 3/5/7 runde, adaugă boți și apasă **Start** (minim 2 jucători).
    **Nivel boți** (Ușor / Mediu / Greu, implicit Mediu) se aplică boților adăugați după aceea; lângă
    fiecare bot apare nivelul lui, iar hostul îl schimbă cu un clic pe etichetă. Ușor: reacționează
-   încet, mai mult sparge cadouri decât vânează, greșește și ezită, dar tot fuge de explozii. Mediu:
-   reacție de ~0,2 s, vânează uneori. Greu: decide la fiecare tick și vânează mereu.
+   încet, aproape doar sparge cadouri, greșește și ezită, dar tot fuge de explozii. Mediu: reacție de
+   ~0,3 s, vânează rar și doar de aproape, mai greșește. Greu: reacție de ~0,1 s, vânează des, dar
+   nu e perfect (mai greșește, observă târziu petardele altora).
 3. Fiecare rundă începe cu **3, 2, 1, FOC!**; până la FOC nu se mișcă nimeni.
-4. Pune petarde ca să spargi cadourile și să-i prinzi pe ceilalți. Din cadouri pică power-up-uri:
-   o petardă în plus, rază mai mare, viteză. După 2 minute arena începe să se strângă în spirală.
+4. Pune petarde ca să spargi cadourile și să-i prinzi pe ceilalți. Din cadouri pică power-up-uri
+   (țin până la sfârșitul rundei):
+   - **+1 petardă** (albastru), **+1 rază** (portocaliu), **Viteză** (verde-albastru);
+   - **Șut** (gheată): împinge-te într-o petardă și o trimiți alunecând până se lovește de ceva;
+   - **Scut** (albastru deschis): te salvează de o explozie (nu și de arena care se strânge);
+   - **Foc străpungător** (săgeată roșie): flăcările tale trec prin cadouri și le sparg pe toate;
+   - **Mahmureală** (sticlă mov), cel rău: comenzile inversate 8 secunde. Boții îl ocolesc.
+
+   După 2 minute arena începe să se strângă în spirală.
 5. Punctaj: ultimul în viață **+3**, kill **+1**, propria petardă **−1**. Într-un lanț de petarde,
    kill-ul e al celui care l-a aprins. Dacă mor toți deodată, e egalitate.
 6. La final: podium, clasamentul complet și premii (Artificierul, Kamikaze, Supraviețuitorul,
@@ -79,6 +87,9 @@ Toate efectele sunt generate cu Web Audio. Oricare poate fi înlocuit punând un
 | `fitil.ogg` | fitilul petardei puse |
 | `explozie.ogg` | explozie |
 | `powerup.ogg` | e luat un power-up |
+| `mahmureala.ogg` | e luată Mahmureala (comenzi inversate) |
+| `sut.ogg` | e șutată o petardă |
+| `scut.ogg` | un scut oprește o explozie |
 | `moarte.ogg` | moare un jucător |
 | `numaratoare.ogg` | 3, 2, 1 la începutul rundei |
 | `foc.ogg` | FOC! |
