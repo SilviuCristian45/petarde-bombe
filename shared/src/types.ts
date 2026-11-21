@@ -27,6 +27,11 @@ export interface PlayerState {
   maxBombs: number;
   range: number;
   speed: number;
+  kick: boolean; // walking into a petard kicks it
+  pierce: boolean; // own blasts go through gifts
+  shield: boolean; // the next blast is absorbed
+  graceTicks: number; // >0 right after the shield took a blast: fire does not hurt
+  curseTicks: number; // >0 while the controls are reversed
   wins: number;
   kills: number;
   deaths: number;
@@ -44,6 +49,8 @@ export interface BombState {
   owner: string;
   fuse: number; // ticks left
   range: number;
+  pierce: boolean;
+  dir: number; // DIR_* while sliding after a kick, DIR_NONE at rest
 }
 
 export interface FlameState {
@@ -89,6 +96,8 @@ export type GameEvent =
   | { type: 'explosion'; x: number; y: number; owner: string; cells: number[] }
   | { type: 'brickDestroyed'; x: number; y: number }
   | { type: 'pickup'; playerId: string; powerup: number }
+  | { type: 'kick'; playerId: string; x: number; y: number }
+  | { type: 'shieldLost'; playerId: string }
   | { type: 'death'; playerId: string; killerId: string; suicide: boolean }
   | { type: 'shrink'; x: number; y: number }
   | { type: 'roundStart'; round: number }

@@ -109,9 +109,9 @@ export function generateGrid(state: GameState): number[] {
 
 /**
  * Cells a blast from (x, y) reaches: the center plus each arm until a wall (excluded)
- * or a brick/bomb (included, stops the arm).
+ * or a brick/bomb (included, stops the arm). A piercing blast goes on through bricks.
  */
-export function blastCells(state: GameState, x: number, y: number, range: number): number[] {
+export function blastCells(state: GameState, x: number, y: number, range: number, pierce = false): number[] {
   const cells = [cellIndex(state, x, y)];
   for (const [dx, dy] of ARMS) {
     for (let k = 1; k <= range; k++) {
@@ -120,7 +120,7 @@ export function blastCells(state: GameState, x: number, y: number, range: number
       const cell = cellAt(state, cx, cy);
       if (cell === CELL_WALL) break;
       cells.push(cellIndex(state, cx, cy));
-      if (cell === CELL_BRICK || bombAt(state, cx, cy)) break;
+      if ((cell === CELL_BRICK && !pierce) || bombAt(state, cx, cy)) break;
     }
   }
   return cells;

@@ -1,7 +1,9 @@
 import {
   BOMB_FUSE_TICKS,
+  BOMB_SLIDE_TICKS,
   CELL_BRICK,
   COUNTDOWN_TICKS,
+  CURSE_TICKS,
   TICK_RATE,
   CELL_EMPTY,
   CELL_WALL,
@@ -20,10 +22,16 @@ import {
   POINTS_ROUND_WIN,
   POINTS_SUICIDE,
   POWERUP_BOMB,
+  POWERUP_CURSE,
   POWERUP_DROP_CHANCE,
+  POWERUP_KICK,
+  POWERUP_PIERCE,
   POWERUP_RANGE,
+  POWERUP_SHIELD,
   POWERUP_SPEED,
+  POWERUP_WEIGHTS,
   ROUND_END_DELAY_TICKS,
+  SHIELD_GRACE_TICKS,
   SPEED_STEP,
 } from './constants';
 import { blastCells, bombAt, cellCenter, cellIndex, cellOf, isBlocked } from './grid';
@@ -39,6 +47,14 @@ const ACTION_DIRS: Partial<Record<Action, number>> = {
   left: DIR_LEFT,
   stop: DIR_NONE,
 };
+
+const POWERUP_WEIGHT_TOTAL = POWERUP_WEIGHTS.reduce((sum, [, w]) => sum + w, 0);
+
+/** The direction a player actually walks: the held one, reversed while cursed. */
+export function moveDir(p: Readonly<PlayerState>): number {
+  if (p.curseTicks <= 0 || p.dir === DIR_NONE) return p.dir;
+  return ((p.dir + 1) % 4) + 1; // up <-> down, right <-> left
+}
 
 /** 3, 2, 1 while the round's countdown runs, then 0 ("FOC!"). */
 export function countdownSeconds(roundTick: number): number {
@@ -88,15 +104,21 @@ export function step(state: GameState): GameEvent[] {
       p.bombPressed = false;
       continue;
     }
+    if (p.graceTicks > 0) p.graceTicks--;
+    if (p.curseTicks > 0) p.curseTicks--;
     if (p.bombPressed) {
       p.bombPressed = false;
       placeBomb(state, p, events);
     }
+    const { x, y } = p;
     movePlayer(state, p);
+    // A kick needs a push: standing against the petard, not just arriving next to it.
+    if (p.x === x && p.y === y) kickBomb(state, p, events);
     pickUp(state, p, events);
   }
 
   decayFlames(state);
+  slideBombs(state);
   explodeBombs(state, events);
   shrinkArena(state, events);
   resolveDeaths(state, players, events);
@@ -111,7 +133,16 @@ function placeBomb(state: GameState, p: PlayerState, events: GameEvent[]): void 
   let active = 0;
   for (const b of state.bombs) if (b.owner === p.id) active++;
   if (active >= p.maxBombs) return;
-  state.bombs.push({ id: state.nextId++, x, y, owner: p.id, fuse: BOMB_FUSE_TICKS, range: p.range });
+  state.bombs.push({
+    id: state.nextId++,
+    x,
+    y,
+    owner: p.id,
+    fuse: BOMB_FUSE_TICKS,
+    range: p.range,
+    pierce: p.pierce,
+    dir: DIR_NONE,
+  });
   events.push({ type: 'bombPlaced', x, y, owner: p.id });
 }
 
@@ -129,8 +160,9 @@ function advance(pos: number, center: number, d: number, speed: number, blocked:
  * blocked but the neighbouring lane they lean into is open, they slide into that lane.
  */
 export function movePlayer(state: GameState, p: PlayerState): void {
-  if (p.dir === DIR_NONE) return;
-  const [dx, dy] = DIR_VECTORS[p.dir]!;
+  const dir = moveDir(p);
+  if (dir === DIR_NONE) return;
+  const [dx, dy] = DIR_VECTORS[dir]!;
   const horizontal = dx !== 0;
   const d = horizontal ? dx : dy;
   const cx = cellOf(p.x);
@@ -172,6 +204,54 @@ export function movePlayer(state: GameState, p: PlayerState): void {
   }
 }
 
+/** A petard can slide into an empty cell with no other petard and nobody standing in it. */
+function canSlideTo(state: GameState, x: number, y: number): boolean {
+  if (isBlocked(state, x, y)) return false;
+  for (const p of Object.values(state.players)) {
+    if (p.alive && cellOf(p.x) === x && cellOf(p.y) === y) return false;
+  }
+  return true;
+}
+
+/** With the kick power-up, pushing against a resting petard sends it sliding the same way. */
+function kickBomb(state: GameState, p: PlayerState, events: GameEvent[]): void {
+  const dir = moveDir(p);
+  if (!p.kick || dir === DIR_NONE) return;
+  const [dx, dy] = DIR_VECTORS[dir]!;
+  const cx = cellOf(p.x);
+  const cy = cellOf(p.y);
+  // Pressed against it: on the lane and at (or past) the cell center, facing the petard.
+  if (dx !== 0 ? p.y !== cellCenter(cy) : p.x !== cellCenter(cx)) return;
+  const along = dx !== 0 ? p.x - cellCenter(cx) : p.y - cellCenter(cy);
+  if (along * (dx + dy) < 0) return;
+  const b = bombAt(state, cx + dx, cy + dy);
+  if (!b || b.dir !== DIR_NONE || !canSlideTo(state, b.x + dx, b.y + dy)) return;
+  b.dir = dir;
+  events.push({ type: 'kick', playerId: p.id, x: b.x, y: b.y });
+}
+
+/** Kicked petards slide on until something is in the way; they keep their fuse. */
+function slideBombs(state: GameState): void {
+  if (state.roundTick % BOMB_SLIDE_TICKS !== 0) return;
+  for (const b of state.bombs) {
+    if (b.dir === DIR_NONE) continue;
+    const [dx, dy] = DIR_VECTORS[b.dir]!;
+    if (canSlideTo(state, b.x + dx, b.y + dy)) {
+      b.x += dx;
+      b.y += dy;
+    } else b.dir = DIR_NONE;
+  }
+}
+
+function rollPowerup(state: GameState): number {
+  let r = nextInt(state, POWERUP_WEIGHT_TOTAL);
+  for (const [type, weight] of POWERUP_WEIGHTS) {
+    if (r < weight) return type;
+    r -= weight;
+  }
+  return POWERUP_BOMB;
+}
+
 function pickUp(state: GameState, p: PlayerState, events: GameEvent[]): void {
   const x = cellOf(p.x);
   const y = cellOf(p.y);
@@ -182,6 +262,10 @@ function pickUp(state: GameState, p: PlayerState, events: GameEvent[]): void {
   if (type === POWERUP_BOMB) p.maxBombs = Math.min(MAX_BOMBS, p.maxBombs + 1);
   else if (type === POWERUP_RANGE) p.range = Math.min(MAX_RANGE, p.range + 1);
   else if (type === POWERUP_SPEED) p.speed = Math.min(MAX_SPEED, p.speed + SPEED_STEP);
+  else if (type === POWERUP_KICK) p.kick = true;
+  else if (type === POWERUP_SHIELD) p.shield = true;
+  else if (type === POWERUP_PIERCE) p.pierce = true;
+  else if (type === POWERUP_CURSE) p.curseTicks = CURSE_TICKS;
   p.pickups++;
   events.push({ type: 'pickup', playerId: p.id, powerup: type });
 }
@@ -217,7 +301,7 @@ export function explodeBombs(state: GameState, events: GameEvent[]): void {
   const bricks = new Map<number, string>();
   for (let q = 0; q < queue.length; q++) {
     const { bomb, attacker } = queue[q]!;
-    const cells = blastCells(state, bomb.x, bomb.y, bomb.range);
+    const cells = blastCells(state, bomb.x, bomb.y, bomb.range, bomb.pierce);
     for (const i of cells) {
       const x = i % state.width;
       const y = (i - x) / state.width;
@@ -245,7 +329,7 @@ export function explodeBombs(state: GameState, events: GameEvent[]): void {
     if (credited) credited.bricks++;
     events.push({ type: 'brickDestroyed', x, y });
     if (nextRandom(state) < POWERUP_DROP_CHANCE) {
-      state.powerups.push({ x, y, type: 1 + nextInt(state, 3) });
+      state.powerups.push({ x, y, type: rollPowerup(state) });
     }
   }
 }
@@ -268,7 +352,10 @@ export function shrinkArena(state: GameState, events: GameEvent[]): void {
   events.push({ type: 'shrink', x, y });
 }
 
-/** Everyone standing in fire or crushed by the closing arena dies at the same time. */
+/**
+ * Everyone standing in fire or crushed by the closing arena dies at the same time.
+ * A shield absorbs one blast (never the arena) and gives a moment to get out of the fire.
+ */
 function resolveDeaths(state: GameState, players: PlayerState[], events: GameEvent[]): void {
   const flameAt = new Map<number, FlameState>();
   for (const f of state.flames) flameAt.set(cellIndex(state, f.x, f.y), f);
@@ -278,9 +365,14 @@ function resolveDeaths(state: GameState, players: PlayerState[], events: GameEve
     if (!p.alive) continue;
     const i = cellIndex(state, cellOf(p.x), cellOf(p.y));
     if (state.grid[i] === CELL_WALL) dead.push({ p, killer: '' });
-    else {
+    else if (p.graceTicks <= 0) {
       const f = flameAt.get(i);
-      if (f) dead.push({ p, killer: f.owner });
+      if (!f) continue;
+      if (p.shield) {
+        p.shield = false;
+        p.graceTicks = SHIELD_GRACE_TICKS;
+        events.push({ type: 'shieldLost', playerId: p.id });
+      } else dead.push({ p, killer: f.owner });
     }
   }
   for (const { p, killer } of dead) {

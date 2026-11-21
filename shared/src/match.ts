@@ -93,6 +93,11 @@ export function addPlayer(state: GameState, id: string, name: string, isBot = fa
     maxBombs: START_BOMBS,
     range: START_RANGE,
     speed: START_SPEED,
+    kick: false,
+    pierce: false,
+    shield: false,
+    graceTicks: 0,
+    curseTicks: 0,
     wins: 0,
     kills: 0,
     deaths: 0,
@@ -264,6 +269,11 @@ export function startRound(state: GameState): void {
     p.maxBombs = START_BOMBS;
     p.range = START_RANGE;
     p.speed = START_SPEED;
+    p.kick = false;
+    p.pierce = false;
+    p.shield = false;
+    p.graceTicks = 0;
+    p.curseTicks = 0;
   }
 }
 

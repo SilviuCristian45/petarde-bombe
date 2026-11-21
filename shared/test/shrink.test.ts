@@ -59,7 +59,7 @@ describe('shrinking arena', () => {
 
   it('removes bombs and power-ups on cells it closes', () => {
     const s = match();
-    s.bombs.push({ id: 99, x: 1, y: 1, owner: 'b', fuse: 30, range: 2 });
+    s.bombs.push({ id: 99, x: 1, y: 1, owner: 'b', fuse: 30, range: 2, pierce: false, dir: 0 });
     s.powerups.push({ x: 2, y: 1, type: 1 });
     s.roundTick = SHRINK_START_TICKS - 1;
     run(s, 1 + SHRINK_INTERVAL_TICKS);

@@ -37,7 +37,7 @@ export function makeState(rows: string[]): GameState {
 }
 
 export function addBomb(state: GameState, x: number, y: number, owner: string, fuse = BOMB_FUSE_TICKS, range = 2) {
-  const bomb = { id: state.nextId++, x, y, owner, fuse, range };
+  const bomb = { id: state.nextId++, x, y, owner, fuse, range, pierce: false, dir: 0 };
   state.bombs.push(bomb);
   return bomb;
 }

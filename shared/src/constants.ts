@@ -33,7 +33,21 @@ export const DIR_VECTORS: readonly (readonly [number, number])[] = [
 export const POWERUP_BOMB = 1;
 export const POWERUP_RANGE = 2;
 export const POWERUP_SPEED = 3;
-export const POWERUP_DROP_CHANCE = 0.35;
+export const POWERUP_KICK = 4; // walk into a petard to kick it along
+export const POWERUP_SHIELD = 5; // survives one blast
+export const POWERUP_PIERCE = 6; // blasts go through gifts
+export const POWERUP_CURSE = 7; // the bad one: reversed controls for a while
+export const POWERUP_DROP_CHANCE = 0.4;
+/** Relative drop weights; the classic three stay the most common. */
+export const POWERUP_WEIGHTS: readonly (readonly [type: number, weight: number])[] = [
+  [POWERUP_BOMB, 6],
+  [POWERUP_RANGE, 6],
+  [POWERUP_SPEED, 4],
+  [POWERUP_KICK, 3],
+  [POWERUP_SHIELD, 2],
+  [POWERUP_PIERCE, 2],
+  [POWERUP_CURSE, 2],
+];
 
 // Players
 export const MAX_PLAYERS = 6;
@@ -51,6 +65,12 @@ export const BRICK_DENSITY = 0.7;
 // Bombs and flames
 export const BOMB_FUSE_TICKS = 50; // 2.5 s
 export const FLAME_TICKS = 10; // 0.5 s
+/** A kicked petard slides one cell every this many ticks (10 cells/s). */
+export const BOMB_SLIDE_TICKS = 2;
+/** After the shield takes a blast, its owner cannot burn for this long (the flames die out first). */
+export const SHIELD_GRACE_TICKS = FLAME_TICKS + 10;
+/** "Mahmureală": reversed controls for 8 s. */
+export const CURSE_TICKS = 8 * TICK_RATE;
 
 // Round flow
 /** "3, 2, 1, FOC!" at the start of every round: nobody moves or drops bombs until FOC. */
