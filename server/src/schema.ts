@@ -20,6 +20,11 @@ export const PlayerSchema = schema(
     maxBombs: t.uint8(),
     range: t.uint8(),
     speed: t.uint16(),
+    kick: t.boolean(),
+    pierce: t.boolean(),
+    shield: t.boolean(),
+    graceTicks: t.uint8(),
+    curseTicks: t.uint16(),
     wins: t.uint16(),
     kills: t.uint16(),
     deaths: t.uint16(),
@@ -33,7 +38,16 @@ export const PlayerSchema = schema(
 export type PlayerSchema = SchemaType<typeof PlayerSchema>;
 
 export const BombSchema = schema(
-  { id: t.uint32(), x: t.uint8(), y: t.uint8(), owner: t.string(), fuse: t.uint8(), range: t.uint8() },
+  {
+    id: t.uint32(),
+    x: t.uint8(),
+    y: t.uint8(),
+    owner: t.string(),
+    fuse: t.uint8(),
+    range: t.uint8(),
+    pierce: t.boolean(),
+    dir: t.uint8(),
+  },
   'Bomb',
 );
 export type BombSchema = SchemaType<typeof BombSchema>;

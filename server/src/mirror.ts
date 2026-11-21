@@ -38,6 +38,11 @@ const PLAYER_KEYS = [
   'maxBombs',
   'range',
   'speed',
+  'kick',
+  'pierce',
+  'shield',
+  'graceTicks',
+  'curseTicks',
   'wins',
   'kills',
   'deaths',
@@ -46,7 +51,7 @@ const PLAYER_KEYS = [
   'bricks',
   'pickups',
 ] as const;
-const BOMB_KEYS = ['id', 'x', 'y', 'owner', 'fuse', 'range'] as const;
+const BOMB_KEYS = ['id', 'x', 'y', 'owner', 'fuse', 'range', 'pierce', 'dir'] as const;
 const FLAME_KEYS = ['x', 'y', 'ttl', 'owner'] as const;
 const POWERUP_KEYS = ['x', 'y', 'type'] as const;
 
