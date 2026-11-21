@@ -10,6 +10,9 @@ export const SFX_NAMES = [
   'fitil', // its fuse starts hissing
   'explozie',
   'powerup',
+  'mahmureala', // the curse is picked up
+  'sut', // a petard is kicked
+  'scut', // a shield takes a blast
   'moarte',
   'numaratoare', // 3, 2, 1
   'foc', // FOC!
@@ -75,6 +78,17 @@ const SYNTH: Record<SfxName, Synth> = {
   },
   powerup: (ctx, out, t) => {
     [660, 880, 1320].forEach((f, i) => tone(ctx, out, t + i * 0.06, { type: 'square', from: f, dur: 0.09, vol: 0.12 }));
+  },
+  mahmureala: (ctx, out, t) => {
+    [440, 370, 311].forEach((f, i) => tone(ctx, out, t + i * 0.1, { type: 'triangle', from: f, to: f * 0.94, dur: 0.14, vol: 0.2 }));
+  },
+  sut: (ctx, out, t) => {
+    tone(ctx, out, t, { type: 'sine', from: 240, to: 90, dur: 0.1, vol: 0.45 });
+    noise(ctx, out, t, { dur: 0.08, vol: 0.25, filter: 'lowpass', from: 1800, to: 400 });
+  },
+  scut: (ctx, out, t) => {
+    tone(ctx, out, t, { type: 'square', from: 1200, to: 600, dur: 0.25, vol: 0.12 });
+    tone(ctx, out, t, { type: 'sine', from: 1800, to: 1500, dur: 0.35, vol: 0.15 });
   },
   moarte: (ctx, out, t) => tone(ctx, out, t, { type: 'sawtooth', from: 520, to: 90, dur: 0.6, vol: 0.2 }),
   numaratoare: (ctx, out, t) => tone(ctx, out, t, { type: 'sine', from: 660, dur: 0.14, vol: 0.3 }),

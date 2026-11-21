@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  BOMB_SLIDE_TICKS,
   CELL_BRICK,
   CELL_WALL,
   computeStandings,
@@ -10,6 +11,13 @@ import {
   POINTS_KILL,
   POINTS_ROUND_WIN,
   POINTS_SUICIDE,
+  POWERUP_BOMB,
+  POWERUP_CURSE,
+  POWERUP_KICK,
+  POWERUP_PIERCE,
+  POWERUP_RANGE,
+  POWERUP_SHIELD,
+  POWERUP_SPEED,
   SHRINK_START_TICKS,
   sortedPlayers,
   SUB,
@@ -67,7 +75,22 @@ export interface GameSceneData {
 interface PlayerView {
   body: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
+  /** Ring around a player who carries a shield. */
+  aura: Phaser.GameObjects.Arc;
 }
+
+/** What each power-up says above the player who takes it. */
+const POWERUP_LABELS: Record<number, { text: string; color: string }> = {
+  [POWERUP_BOMB]: { text: '+1 petardă', color: '#9bb7ff' },
+  [POWERUP_RANGE]: { text: '+1 rază', color: '#ffb347' },
+  [POWERUP_SPEED]: { text: 'Viteză!', color: '#7fe3d4' },
+  [POWERUP_KICK]: { text: 'Șut!', color: '#e0b48a' },
+  [POWERUP_SHIELD]: { text: 'Scut!', color: '#90e0ef' },
+  [POWERUP_PIERCE]: { text: 'Foc străpungător!', color: '#ff7070' },
+  [POWERUP_CURSE]: { text: 'Mahmureală!', color: '#c77dff' },
+};
+/** A kicked petard covers one cell per BOMB_SLIDE_TICKS; its image follows at that pace. */
+const BOMB_SLIDE_PX_PER_MS = TILE / (BOMB_SLIDE_TICKS * TICK_MS);
 
 interface HudRow {
   swatch: Phaser.GameObjects.Rectangle;
@@ -322,7 +345,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncGrid(state);
     this.syncPowerups(state, time);
-    this.syncBombs(state, time);
+    this.syncBombs(state, time, delta);
     this.syncFlames(state);
     this.syncPlayers(state, alpha);
     this.syncHud(state);
@@ -350,8 +373,15 @@ export class GameScene extends Phaser.Scene {
         playSfx('petarda');
         playSfx('fitil');
         if (e.owner === this.transport.playerId) vibrate('bomb');
-      } else if (e.type === 'pickup') playSfx('powerup');
-      else if (e.type === 'matchEnd') playSfx('la-multi-ani');
+      } else if (e.type === 'pickup') {
+        playSfx(e.powerup === POWERUP_CURSE ? 'mahmureala' : 'powerup');
+        const label = POWERUP_LABELS[e.powerup];
+        if (label) this.showPopup(e.playerId, label.text, label.color, 18);
+      } else if (e.type === 'kick') playSfx('sut');
+      else if (e.type === 'shieldLost') {
+        playSfx('scut');
+        this.onShieldLost(e.playerId);
+      } else if (e.type === 'matchEnd') playSfx('la-multi-ani');
       else if (e.type === 'death') {
         playSfx('moarte');
         this.onDeath(e);
@@ -372,17 +402,21 @@ export class GameScene extends Phaser.Scene {
 
   /** "+1" / "-1" / "+3" rising from where the player is (or was, if they just died). */
   private showScorePopup(playerId: string, points: number): void {
+    this.showPopup(playerId, points > 0 ? `+${points}` : `−${-points}`, points > 0 ? '#7cff9b' : '#ff6b81');
+  }
+
+  /** A short text rising from where the player is (or was). */
+  private showPopup(playerId: string, label: string, color: string, size = 26): void {
     const view = this.playerViews.get(playerId);
     if (!view) return;
-    const label = points > 0 ? `+${points}` : `−${-points}`;
     // Starts above the head, but never so high that the rise leaves the board.
     const y = Math.max(view.body.y - TILE * 0.8, BOARD_Y + TILE * 1.2);
     const text = this.add
       .text(view.body.x, y, label, {
         fontFamily: FONT,
-        fontSize: '26px',
+        fontSize: `${size}px`,
         fontStyle: 'bold',
-        color: points > 0 ? '#7cff9b' : '#ff6b81',
+        color,
         stroke: '#000000',
         strokeThickness: 4,
       })
@@ -397,6 +431,25 @@ export class GameScene extends Phaser.Scene {
       ease: 'Cubic.easeOut',
       onComplete: () => text.destroy(),
     });
+  }
+
+  /** The shield bursts: a flash of shards in the shield's color. */
+  private onShieldLost(playerId: string): void {
+    const view = this.playerViews.get(playerId);
+    if (!view?.body.visible) return;
+    burst(this, view.body.x, view.body.y, {
+      count: 20,
+      lifespanMs: 600,
+      depth: DEPTH.effect,
+      config: {
+        speed: { min: 60, max: 180 },
+        lifespan: { min: 300, max: 600 },
+        scale: { start: 1, end: 0 },
+        tint: [0x90e0ef, 0xffffff],
+        blendMode: Phaser.BlendModes.ADD,
+      },
+    });
+    if (playerId === this.transport.playerId) vibrate('bomb');
   }
 
   private onDeath(e: Extract<GameEvent, { type: 'death' }>): void {
@@ -490,15 +543,21 @@ export class GameScene extends Phaser.Scene {
     prune(this.powerupViews, seen);
   }
 
-  private syncBombs(state: Readonly<GameState>, time: number): void {
+  private syncBombs(state: Readonly<GameState>, time: number, delta: number): void {
     const seen = new Set<number>();
+    const maxStep = BOMB_SLIDE_PX_PER_MS * delta;
     for (const b of state.bombs) {
       seen.add(b.id);
+      const tx = cellToScreenX(b.x);
+      const ty = cellToScreenY(b.y);
       let img = this.bombViews.get(b.id);
       if (!img) {
-        img = this.add.image(cellToScreenX(b.x), cellToScreenY(b.y), TEX.bomb).setDepth(DEPTH.bomb);
+        img = this.add.image(tx, ty, TEX.bomb).setDepth(DEPTH.bomb);
         this.bombViews.set(b.id, img);
       }
+      // A kicked petard glides to its cell instead of jumping there.
+      img.x += Phaser.Math.Clamp(tx - img.x, -maxStep, maxStep);
+      img.y += Phaser.Math.Clamp(ty - img.y, -maxStep, maxStep);
       // Pulses faster as the fuse burns down.
       const rate = 120 + b.fuse * 6;
       img.setScale(1 + Math.sin(time / rate) * 0.08);
@@ -532,12 +591,14 @@ export class GameScene extends Phaser.Scene {
           .text(0, 0, p.name, { fontFamily: FONT, fontSize: TOUCH_LAYOUT ? '14px' : '11px', color: '#ffffff', stroke: '#000000', strokeThickness: 3 })
           .setOrigin(0.5, 1)
           .setDepth(DEPTH.label);
-        view = { body, label };
+        const aura = this.add.circle(0, 0, TILE / 2 + 3).setStrokeStyle(3, 0x90e0ef, 0.9).setFillStyle(0x90e0ef, 0.12);
+        view = { body, label, aura };
         this.playerViews.set(p.id, view);
       }
       const visible = p.alive && state.phase === 'playing';
       view.body.setVisible(visible);
       view.label.setVisible(visible);
+      view.aura.setVisible(visible && p.shield);
       if (!visible) continue;
       const prev = this.prevPos.get(p.id);
       let x = p.x;
@@ -549,12 +610,18 @@ export class GameScene extends Phaser.Scene {
       const sx = subToScreenX(x);
       const sy = subToScreenY(y);
       view.body.setPosition(sx, sy).setDepth(DEPTH.player + y / (SUB * 100));
+      view.aura.setPosition(sx, sy).setDepth(view.body.depth + 0.001);
+      // Just saved by the shield: blinking. Cursed ("Mahmureală"): green and wobbly.
+      view.body.setAlpha(p.graceTicks > 0 && Math.floor(this.time.now / 80) % 2 === 0 ? 0.35 : 1);
+      if (p.curseTicks > 0) view.body.setTint(0xb5e48c).setRotation(Math.sin(this.time.now / 120) * 0.25);
+      else view.body.clearTint().setRotation(0);
       view.label.setPosition(sx, sy - TILE / 2 - 2).setText(p.id === this.transport.playerId ? `${p.name} (tu)` : p.name);
     }
     for (const [id, view] of this.playerViews) {
       if (seen.has(id)) continue;
       view.body.destroy();
       view.label.destroy();
+      view.aura.destroy();
       this.playerViews.delete(id);
     }
   }

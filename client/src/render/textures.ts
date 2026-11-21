@@ -1,5 +1,14 @@
 import Phaser from 'phaser';
-import { PLAYER_COLORS, POWERUP_BOMB, POWERUP_RANGE, POWERUP_SPEED } from '@petarde/shared';
+import {
+  PLAYER_COLORS,
+  POWERUP_BOMB,
+  POWERUP_CURSE,
+  POWERUP_KICK,
+  POWERUP_PIERCE,
+  POWERUP_RANGE,
+  POWERUP_SHIELD,
+  POWERUP_SPEED,
+} from '@petarde/shared';
 import { TILE } from './layout';
 
 // Placeholder art drawn at boot, New Year's Eve flavoured: bricks are gift boxes,
@@ -77,15 +86,35 @@ function createTextures(scene: Phaser.Scene): void {
     [POWERUP_BOMB]: 0x4361ee,
     [POWERUP_RANGE]: 0xf77f00,
     [POWERUP_SPEED]: 0x2a9d8f,
+    [POWERUP_KICK]: 0x8d5b3c,
+    [POWERUP_SHIELD]: 0x48cae4,
+    [POWERUP_PIERCE]: 0xd62828,
+    [POWERUP_CURSE]: 0x6a4c93,
   };
   for (const [type, color] of Object.entries(powerupColors)) {
     g.fillStyle(0x000000, 0.35).fillRoundedRect(7, 9, T - 12, T - 12, 6);
     g.fillStyle(color).fillRoundedRect(5, 5, T - 12, T - 12, 6);
     g.fillStyle(0xffffff);
     const c = T / 2 - 1;
-    if (Number(type) === POWERUP_BOMB) g.fillCircle(c, c + 1, 7).fillRect(c - 1, c - 10, 3, 5);
-    else if (Number(type) === POWERUP_RANGE) g.fillRect(c - 10, c - 2, 20, 4).fillRect(c - 2, c - 10, 4, 20);
-    else g.fillTriangle(c - 7, c - 9, c + 7, c, c - 7, c + 9);
+    const kind = Number(type);
+    if (kind === POWERUP_BOMB) g.fillCircle(c, c + 1, 7).fillRect(c - 1, c - 10, 3, 5);
+    else if (kind === POWERUP_RANGE) g.fillRect(c - 10, c - 2, 20, 4).fillRect(c - 2, c - 10, 4, 20);
+    else if (kind === POWERUP_SPEED) g.fillTriangle(c - 7, c - 9, c + 7, c, c - 7, c + 9);
+    else if (kind === POWERUP_KICK) {
+      // a boot
+      g.fillRect(c - 6, c - 10, 7, 14).fillRoundedRect(c - 6, c + 1, 16, 7, 3);
+    } else if (kind === POWERUP_SHIELD) {
+      g.fillRect(c - 8, c - 9, 16, 9).fillTriangle(c - 8, c, c + 8, c, c, c + 10);
+      g.fillStyle(color).fillRect(c - 1, c - 7, 2, 13).fillRect(c - 6, c - 4, 12, 2);
+    } else if (kind === POWERUP_PIERCE) {
+      // an arrow through a little gift
+      g.fillStyle(0xffd166).fillRect(c - 4, c - 4, 9, 9);
+      g.fillStyle(0xffffff).fillRect(c - 11, c - 1, 18, 3).fillTriangle(c + 6, c - 5, c + 12, c + 1, c + 6, c + 6);
+    } else {
+      // a bottle: "Mahmureală"
+      g.fillRect(c - 2, c - 11, 5, 6).fillRoundedRect(c - 6, c - 5, 13, 15, 4);
+      g.fillStyle(0x9ef01a).fillRect(c - 4, c + 1, 9, 5);
+    }
     bake(TEX.powerup(Number(type)));
   }
 
