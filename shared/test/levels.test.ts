@@ -56,14 +56,15 @@ describe('bot level settings', () => {
 });
 
 describe('bot levels in play', () => {
-  it('a hard bot decides every tick; an easy one only every few ticks', () => {
+  it('a hard bot decides every few ticks, an easy one far less often', () => {
     const s = makeState(['#######', '#1....#', '#.#.#.#', '#....2#', '#######']);
     s.players.p1!.isBot = true;
     s.players.p1!.botLevel = BOT_EASY;
     addBomb(s, 1, 1, 'p1', 40, 2);
     const every = botParams(BOT_EASY).thinkEvery;
     expect(every).toBeGreaterThan(botParams(BOT_MEDIUM).thinkEvery);
-    expect(botParams(BOT_HARD).thinkEvery).toBe(1);
+    const hardEvery = botParams(BOT_HARD).thinkEvery;
+    expect(hardEvery).toBeLessThan(botParams(BOT_MEDIUM).thinkEvery);
     let decided = 0;
     for (let t = 0; t < every * 4; t++) {
       s.tick = t;
@@ -72,7 +73,7 @@ describe('bot levels in play', () => {
     }
     expect(decided).toBe(4);
     s.players.p1!.botLevel = BOT_HARD;
-    for (let t = 0; t < 8; t++) {
+    for (let t = 0; t < hardEvery * 4; t += hardEvery) {
       s.tick = t;
       expect(botAct(s, 'p1')).toBe(botDecide(s, 'p1'));
     }

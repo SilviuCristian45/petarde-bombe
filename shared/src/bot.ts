@@ -8,6 +8,7 @@ import {
   CELL_WALL,
   DIR_NONE,
   DIR_VECTORS,
+  POWERUP_CURSE,
   SHRINK_INTERVAL_TICKS,
   SHRINK_START_TICKS,
   SUB,
@@ -15,6 +16,7 @@ import {
 import { blastCells, cellCenter, cellIndex, cellOf } from './grid';
 import { seedFrom } from './rng';
 import { shrinkOrder } from './shrink';
+import { moveDir } from './sim';
 import type { Action, GameState, PlayerState } from './types';
 
 // Simple bots: flee danger, break bricks, bomb near players, grab power-ups.
@@ -38,15 +40,47 @@ export interface BotLevelParams {
   noticeFire: number;
   /** Chance of a random safe step when there is nothing to do, instead of standing still. */
   wander: number;
+  /** While cursed (reversed controls), chance per decision of forgetting it and walking the wrong way. */
+  confused: number;
 }
 
 const NEVER = 1 << 30;
 
 export const BOT_PARAMS: Readonly<Record<number, BotLevelParams>> = {
-  [BOT_EASY]: { thinkEvery: 8, hunt: 0.1, chase: 4, mistake: 0.2, hesitate: 0.2, skipPowerup: 0.5, noticeFire: 30, wander: 0.5 },
-  [BOT_MEDIUM]: { thinkEvery: 4, hunt: 0.45, chase: 8, mistake: 0.07, hesitate: 0.05, skipPowerup: 0.15, noticeFire: 40, wander: 0.5 },
-  // The original bots: decide every tick, always hunt, never err.
-  [BOT_HARD]: { thinkEvery: 1, hunt: 1, chase: NEVER, mistake: 0, hesitate: 0, skipPowerup: 0, noticeFire: NEVER, wander: 0 },
+  [BOT_EASY]: {
+    thinkEvery: 8,
+    hunt: 0.05,
+    chase: 3,
+    mistake: 0.2,
+    hesitate: 0.25,
+    skipPowerup: 0.6,
+    noticeFire: 30,
+    wander: 0.5,
+    confused: 0.5,
+  },
+  [BOT_MEDIUM]: {
+    thinkEvery: 6,
+    hunt: 0.25,
+    chase: 5,
+    mistake: 0.12,
+    hesitate: 0.1,
+    skipPowerup: 0.3,
+    noticeFire: 35,
+    wander: 0.5,
+    confused: 0.3,
+  },
+  // Strong but no longer flawless: a little reaction time, the odd slip, not always hunting.
+  [BOT_HARD]: {
+    thinkEvery: 2,
+    hunt: 0.7,
+    chase: 10,
+    mistake: 0.04,
+    hesitate: 0.03,
+    skipPowerup: 0.05,
+    noticeFire: 45,
+    wander: 0.3,
+    confused: 0.1,
+  },
 };
 
 export function botParams(level: number): BotLevelParams {
@@ -61,6 +95,9 @@ const SALT_HUNT = 3;
 const SALT_POWERUP = 4;
 const SALT_STEP = 5;
 const SALT_WANDER = 6;
+const SALT_CONFUSED = 7;
+
+const REVERSED: Partial<Record<Action, Action>> = { up: 'down', down: 'up', left: 'right', right: 'left' };
 
 /** Deterministic value in [0, 1) mixed from integers; nothing is consumed from the state. */
 function hashRoll(...parts: number[]): number {
@@ -113,7 +150,7 @@ export function computeDanger(state: GameState): Int32Array {
   const bombAtCell = new Map<number, number>();
   state.bombs.forEach((b, k) => bombAtCell.set(cellIndex(state, b.x, b.y), k));
   const times = state.bombs.map((b) => (flameCells.has(cellIndex(state, b.x, b.y)) ? 1 : b.fuse));
-  const blasts = state.bombs.map((b) => blastCells(state, b.x, b.y, b.range));
+  const blasts = state.bombs.map((b) => blastCells(state, b.x, b.y, b.range, b.pierce));
   // A bomb caught in another blast goes off no later than that one.
   for (let changed = true; changed; ) {
     changed = false;
@@ -216,26 +253,26 @@ function brickNextTo(state: GameState, i: number): boolean {
   return false;
 }
 
-function enemyInBlast(state: GameState, i: number, range: number, enemies: Set<number>): boolean {
+function enemyInBlast(state: GameState, i: number, me: PlayerState, enemies: Set<number>): boolean {
   const x = i % state.width;
   const y = (i - x) / state.width;
-  for (const c of blastCells(state, x, y, range)) if (enemies.has(c)) return true;
+  for (const c of blastCells(state, x, y, me.range, me.pierce)) if (enemies.has(c)) return true;
   return false;
 }
 
 /** Worth bombing from cell i: a brick next to it or an enemy inside the blast. */
-function isBombSpot(state: GameState, i: number, range: number, enemies: Set<number>): boolean {
-  return brickNextTo(state, i) || enemyInBlast(state, i, range, enemies);
+function isBombSpot(state: GameState, i: number, me: PlayerState, enemies: Set<number>): boolean {
+  return brickNextTo(state, i) || enemyInBlast(state, i, me, enemies);
 }
 
 /** The bot only starts running at its next decision, so a slow thinker needs more room. */
-function canEscapeAfterBomb(s: Search, range: number, level: BotLevelParams): boolean {
+function canEscapeAfterBomb(s: Search, me: PlayerState, level: BotLevelParams): boolean {
   const { state, start } = s;
   const x = start % state.width;
   const y = (start - x) / state.width;
   const danger = s.danger.slice();
   const fuse = BOMB_FUSE_TICKS - (level.thinkEvery - 1);
-  for (const c of blastCells(state, x, y, range)) danger[c] = Math.min(danger[c]!, fuse);
+  for (const c of blastCells(state, x, y, me.range, me.pierce)) danger[c] = Math.min(danger[c]!, fuse);
   return findPath({ ...s, danger }, (i) => danger[i] === INF) !== null;
 }
 
@@ -284,9 +321,16 @@ export function botDecide(state: GameState, botId: string): Action {
 export function botAct(state: GameState, botId: string): Action | null {
   const me = state.players[botId];
   if (!me) return null;
-  if ((state.tick + me.slot) % botParams(me.botLevel).thinkEvery === 0) return botDecide(state, botId);
-  if (me.dir === DIR_NONE) return null;
-  const [dx, dy] = DIR_VECTORS[me.dir]!;
+  const level = botParams(me.botLevel);
+  if ((state.tick + me.slot) % level.thinkEvery === 0) {
+    const action = botDecide(state, botId);
+    // Cursed: the bot reverses its own input to walk where it means to, unless it forgets.
+    const remembers = decisionRoll(state, me, SALT_CONFUSED) >= level.confused;
+    return me.curseTicks > 0 && remembers ? (REVERSED[action] ?? action) : action;
+  }
+  const dir = moveDir(me);
+  if (dir === DIR_NONE) return null;
+  const [dx, dy] = DIR_VECTORS[dir]!;
   const pos = dx !== 0 ? me.x : me.y;
   const past = (pos - cellCenter(cellOf(pos))) * (dx + dy);
   return past >= 0 && past < me.speed ? 'stop' : null;
@@ -302,6 +346,10 @@ export function botThink(state: GameState, botId: string): BotThought {
   const blocked = new Set<number>();
   for (const b of state.bombs) blocked.add(cellIndex(state, b.x, b.y));
   blocked.delete(here);
+  // Out of danger the bot steps around the curse; running from fire it does not care.
+  const calmBlocked = new Set(blocked);
+  for (const u of state.powerups) if (u.type === POWERUP_CURSE) calmBlocked.add(cellIndex(state, u.x, u.y));
+  calmBlocked.delete(here);
   const s: Search = {
     state,
     start: here,
@@ -315,8 +363,9 @@ export function botThink(state: GameState, botId: string): BotThought {
     path && path.length > 0
       ? { action: directionTo(state, here, path[0]!), intent, path }
       : { action: 'stop', intent, path: [] };
+  const calm: Search = { ...s, blocked: calmBlocked };
   const randomStep = (salt: number): BotThought | null => {
-    const steps = safeSteps(s);
+    const steps = safeSteps(calm);
     if (steps.length === 0) return null;
     const to = steps[Math.floor(decisionRoll(state, me, salt) * steps.length)]!;
     return { action: directionTo(state, here, to), intent: 'idle', path: [to] };
@@ -345,24 +394,24 @@ export function botThink(state: GameState, botId: string): BotThought {
   const hasBomb = active < me.maxBombs && !state.bombs.some((b) => cellIndex(state, b.x, b.y) === here);
 
   // 3. Good spot and a way out: drop a bomb.
-  const bombHere = hasBomb && isBombSpot(state, here, me.range, enemies) && canEscapeAfterBomb(s, me.range, level);
+  const bombHere = hasBomb && isBombSpot(state, here, me, enemies) && canEscapeAfterBomb(s, me, level);
   if (bombHere) {
-    return { action: 'bomb', intent: enemyInBlast(state, here, me.range, enemies) ? 'attack' : 'break', path: [] };
+    return { action: 'bomb', intent: enemyInBlast(state, here, me, enemies) ? 'attack' : 'break', path: [] };
   }
 
   // 4. Head for a power-up or the nearest useful bombing spot, staying out of danger.
   const powerups = new Set<number>();
   for (const u of state.powerups) {
     const i = cellIndex(state, u.x, u.y);
-    if (roundRoll(state, me, SALT_POWERUP, i) >= level.skipPowerup) powerups.add(i);
+    if (u.type !== POWERUP_CURSE && roundRoll(state, me, SALT_POWERUP, i) >= level.skipPowerup) powerups.add(i);
   }
-  const roam: Search = { ...s, strict: true };
+  const roam: Search = { ...calm, strict: true };
   const bombSpot = (i: number, dist: number) =>
-    hasBomb && (brickNextTo(state, i) || (dist <= level.chase && enemyInBlast(state, i, me.range, enemies)));
+    hasBomb && (brickNextTo(state, i) || (dist <= level.chase && enemyInBlast(state, i, me, enemies)));
   const target = findPath(roam, (i, dist) => i !== here && s.danger[i] === INF && (powerups.has(i) || bombSpot(i, dist)));
   if (target) {
     const end = target[target.length - 1]!;
-    const intent = powerups.has(end) ? 'powerup' : enemyInBlast(state, end, me.range, enemies) ? 'attack' : 'break';
+    const intent = powerups.has(end) ? 'powerup' : enemyInBlast(state, end, me, enemies) ? 'attack' : 'break';
     return go(target, intent);
   }
 
