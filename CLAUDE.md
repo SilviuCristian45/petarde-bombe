@@ -25,7 +25,7 @@ Single test file / test name:
 npm test -w shared -- test/explosions.test.ts
 npm test -w shared -- -t "<test name substring>"
 npm run test:watch -w shared
-npm test -w server -- -t "<test name substring>"   # boots a real server on :2568
+npm test -w server -- -t "<test name substring>"   # boots a real server on a free port
 ```
 
 Test URL options: `?debug`, `?bots=1..5` (default 3), `?rounds=3|5|7`, `?seed=abc`, `?botlevel=usor|mediu|greu`. Any of them skips intro/menu/lobby and starts a local match at once (`quick` mode: `Enter` after the match restarts immediately). `?touch` / `?touch=0` force the phone layout and touch controls on or off (otherwise `(hover: none) and (pointer: coarse)`, see `client/src/device.ts`). `?debug` overlays grid coordinates, hitboxes, danger zones, tick/FPS and each bot's intent + planned path. `?room=COD` is the invite link: intro, then a nickname-only menu that joins. In-game: `P` pauses (local only).

@@ -1,4 +1,4 @@
-import { boot, type ColyseusTestServer } from '@colyseus/testing';
+import { ColyseusTestServer } from '@colyseus/testing';
 import type { Room as ClientRoom } from '@colyseus/sdk';
 import {
   BOT_EASY,
@@ -17,6 +17,7 @@ import {
   type MatchRecords,
   type TickEvents,
 } from '@petarde/shared';
+import { createServer as createNetServer } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/app';
 import type { BombeRoom } from '../src/BombeRoom';
@@ -26,8 +27,23 @@ import { openLeaderboard, useLeaderboard, type Leaderboard } from '../src/leader
 let colyseus: ColyseusTestServer;
 let board: Leaderboard;
 
+/** A port nothing listens on, so another local Colyseus server (default test port 2568) is never hit by mistake. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createNetServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as { port: number };
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
 beforeAll(async () => {
-  colyseus = await boot(createServer());
+  // Not boot(): for a Server instance it ignores its port argument and always listens on 2568.
+  const server = createServer();
+  await server.listen(await freePort());
+  colyseus = new ColyseusTestServer(server);
 });
 afterAll(async () => {
   await colyseus.shutdown();
